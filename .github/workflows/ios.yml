@@ -12,7 +12,8 @@ permissions:
 jobs:
   build:
     name: Unsigned .ipa
-    runs-on: macos-26
+    # GitHub-hosted image with Xcode 27.1 (iOS 27.1 SDK), which iPhone Duo support needs.
+    runs-on: xcode-27
     defaults:
       run:
         working-directory: app
