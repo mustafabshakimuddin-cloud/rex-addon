@@ -59,17 +59,31 @@ actor ImageLoader {
         return image
     }
 
+    /// Decodes at most `maxPixelSize` on the long side. Metahub serves posters as JPEG or WebP
+    /// depending on the title, and ImageIO's thumbnailer returns nothing for its WebP files, which
+    /// left most posters blank. JPEG and PNG take the fast ImageIO path; anything it refuses goes
+    /// through UIImage, which decodes every format the system knows, and is scaled the same way.
     nonisolated static func downsample(_ data: Data, maxPixelSize: Int) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
-        let options = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceShouldCacheImmediately: true,      // decode here, not on the main thread at draw time
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ] as CFDictionary
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
-        return UIImage(cgImage: image)
+        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) {
+            let options = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceShouldCacheImmediately: true,      // decode here, not on the main thread at draw time
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            ] as CFDictionary
+            if let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) {
+                return UIImage(cgImage: image)
+            }
+        }
+        guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0 else { return nil }
+        let longSide = max(image.size.width * image.scale, image.size.height * image.scale)
+        let factor = min(1, CGFloat(maxPixelSize) / longSide)
+        let target = CGSize(width: (image.size.width * image.scale * factor).rounded(),
+                            height: (image.size.height * image.scale * factor).rounded())
+        // preparingThumbnail decodes at the target size; preparingForDisplay is the fallback when
+        // the image is already small enough.
+        return image.preparingThumbnail(of: target) ?? image.preparingForDisplay() ?? image
     }
 }
 
