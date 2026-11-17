@@ -19,6 +19,9 @@ struct PlaybackProgress: Codable, Hashable, Identifiable {
 final class Library: ObservableObject {
     nonisolated static let finishedFraction = 0.92
     nonisolated static let minimumResume: Double = 30
+    /// Positions kept on disk; the oldest go first. Every episode ever opened would otherwise stay
+    /// forever, and the whole file is rewritten on each save.
+    nonisolated static let maximumEntries = 1500
 
     @Published private(set) var watchlist: [MediaItem] = []
     @Published private(set) var progress: [String: PlaybackProgress] = [:]
@@ -72,7 +75,13 @@ final class Library: ObservableObject {
     func record(_ target: PlaybackTarget, position: Double, duration: Double) {
         guard duration > 0, position.isFinite, duration.isFinite else { return }
         progress[target.videoID] = PlaybackProgress(item: target.item, episode: target.episode, position: position, duration: duration, updatedAt: Date())
-        scheduleSave()
+        if progress.count > Self.maximumEntries {
+            let overflow = progress.values.sorted { $0.updatedAt < $1.updatedAt }.prefix(progress.count - Self.maximumEntries)
+            for entry in overflow { progress[entry.id] = nil }
+        }
+        // While playing, positions arrive every 10 s; the file only needs the last of a burst.
+        // The player and the app's background transition both call saveNow() on the way out.
+        scheduleSave(after: 5)
     }
 
     func clearProgress(_ entry: PlaybackProgress) {
@@ -97,12 +106,12 @@ final class Library: ObservableObject {
         var progress: [String: PlaybackProgress]
     }
 
-    private func scheduleSave() {
+    private func scheduleSave(after seconds: Double = 0.4) {
         saveTask?.cancel()
         let snapshot = Saved(watchlist: watchlist, progress: progress)
         let url = fileURL
         saveTask = Task.detached(priority: .utility) {
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled, let data = try? JSONEncoder().encode(snapshot) else { return }
             try? data.write(to: url, options: .atomic)
         }

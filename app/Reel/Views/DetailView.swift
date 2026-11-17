@@ -75,7 +75,7 @@ struct DetailView: View {
 
     private var header: some View {
         ZStack(alignment: .bottomLeading) {
-            RemoteImage(url: shown.background ?? shown.poster)
+            RemoteImage(url: shown.background ?? shown.poster, targetWidth: width * 0.75)
                 .frame(width: width, height: headerHeight)
                 .clipped()
             LinearGradient(stops: [
@@ -233,7 +233,7 @@ struct EpisodeRow: View {
         Button(action: play) {
             HStack(alignment: .top, spacing: 14) {
                 ZStack(alignment: .bottom) {
-                    RemoteImage(url: episode.thumbnail)
+                    RemoteImage(url: episode.thumbnail, targetWidth: 110)
                         .frame(width: 150, height: 150 * 9 / 16)
                     if let progress, !progress.isFinished {
                         GeometryReader { proxy in

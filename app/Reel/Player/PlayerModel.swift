@@ -18,6 +18,15 @@ enum EngineHost {
     }()
 }
 
+/// The playback clock, kept apart from PlayerModel: it ticks about ten times a second, and only the
+/// scrubber, the time labels and the subtitle layer should redraw on each tick, not the whole player.
+@MainActor
+final class PlaybackTime: ObservableObject {
+    @Published fileprivate(set) var currentTime: Double = 0
+    @Published fileprivate(set) var sourceTime: Double = 0
+    @Published fileprivate(set) var buffered: Double = 0
+}
+
 /// Mirrors the engine's published state for the player UI and drives a playback session.
 @MainActor
 final class PlayerModel: ObservableObject {
@@ -26,9 +35,8 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var state: PlaybackState = .idle
     @Published private(set) var phase: PlaybackPhase = .idle
     @Published private(set) var duration: Double = 0
-    @Published private(set) var currentTime: Double = 0
-    @Published private(set) var sourceTime: Double = 0
-    @Published private(set) var buffered: Double = 0
+    let time = PlaybackTime()
+    var currentTime: Double { time.currentTime }
     @Published private(set) var audioTracks: [TrackInfo] = []
     @Published private(set) var subtitleTracks: [TrackInfo] = []
     @Published private(set) var activeAudio: Int?
@@ -64,13 +72,16 @@ final class PlayerModel: ObservableObject {
         engine.$subtitleCues.sink { [weak self] in self?.cues = $0 }.store(in: &bag)
         engine.$videoFormat.sink { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
         engine.$hasFirstFrameReadyForDisplay.sink { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
-        engine.clock.$sourceTime.sink { [weak self] in self?.sourceTime = $0 }.store(in: &bag)
-        engine.clock.$bufferedPosition.sink { [weak self] in self?.buffered = $0 }.store(in: &bag)
-        engine.clock.$currentTime.sink { [weak self] time in
+        engine.clock.$sourceTime.removeDuplicates().sink { [weak self] in self?.time.sourceTime = $0 }.store(in: &bag)
+        engine.clock.$bufferedPosition.removeDuplicates().sink { [weak self] in self?.time.buffered = $0 }.store(in: &bag)
+        engine.clock.$currentTime.removeDuplicates().sink { [weak self] value in
             guard let self else { return }
-            self.currentTime = time
+            self.time.currentTime = value
             self.saveProgress(force: false)
         }.store(in: &bag)
+        // The PiP button reads pip.isPossible, which turns true a moment after the layer is ready;
+        // pass its changes through so the player view redraws when it does.
+        pip.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // A new AVPlayer (every load and reroute) means a new layer to build PiP around.
         engine.$currentAVPlayer.sink { [weak self] _ in
             guard let self, let engine = self.engine else { return }
@@ -128,7 +139,7 @@ final class PlayerModel: ObservableObject {
     func seek(to seconds: Double) {
         guard let engine, duration > 0 else { return }
         let target = min(max(0, seconds), max(0, duration - 1))
-        currentTime = target
+        time.currentTime = target
         Task { await engine.seek(to: target) }
     }
 
@@ -148,10 +159,6 @@ final class PlayerModel: ObservableObject {
         if let track { engine.selectSubtitleTrack(index: track.id) } else { engine.clearSubtitle() }
     }
 
-    /// The cues to show now. Cue times are on the source axis, so compare with `sourceTime`.
-    var visibleCues: [SubtitleCue] {
-        cues.filter { sourceTime >= $0.startTime && sourceTime <= $0.endTime }
-    }
 
     // MARK: State
 

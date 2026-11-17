@@ -135,7 +135,11 @@ struct HeroCarousel: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
+    @Environment(\.scenePhase) private var scenePhase
     @State private var selection: String?
+
+    /// Auto-advance only while someone can see it: not in the background, not behind the player.
+    private struct AdvanceKey: Equatable { let ids: [String]; let running: Bool }
 
     /// Taller on narrow screens (poster-like), wider and shallower when the window is wide.
     static func height(for width: CGFloat) -> CGFloat {
@@ -171,8 +175,9 @@ struct HeroCarousel: View {
             .animation(.snappy, value: selection)
             .padding(.bottom, 10)
         }
-        .task(id: items.map(\.id)) {
+        .task(id: AdvanceKey(ids: items.map(\.id), running: scenePhase == .active && playback.session == nil)) {
             // Gentle auto-advance; any swipe simply moves the position it continues from.
+            guard scenePhase == .active, playback.session == nil else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 7_000_000_000)
                 guard !Task.isCancelled, !items.isEmpty else { return }
@@ -192,7 +197,7 @@ struct HeroCarousel: View {
     private func slide(_ item: MediaItem, height: CGFloat) -> some View {
         let wide = width >= 600
         return ZStack(alignment: .bottomLeading) {
-            RemoteImage(url: wide ? (item.background ?? item.poster) : (item.poster ?? item.background))
+            RemoteImage(url: wide ? (item.background ?? item.poster) : (item.poster ?? item.background), targetWidth: width * 0.75)
                 .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
                 .clipped()
             LinearGradient(stops: [

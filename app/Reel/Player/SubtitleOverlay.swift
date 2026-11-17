@@ -9,8 +9,23 @@ struct SubtitleOverlay: View {
     var bottomInset: CGFloat
 
     var body: some View {
+        // With no subtitle track on there are no cues, and nothing here follows the clock.
+        if !model.cues.isEmpty {
+            SubtitleLayer(cues: model.cues, time: model.time, bottomInset: bottomInset)
+        }
+    }
+}
+
+private struct SubtitleLayer: View {
+    let cues: [SubtitleCue]
+    @ObservedObject var time: PlaybackTime
+    var bottomInset: CGFloat
+
+    var body: some View {
         GeometryReader { proxy in
-            let cues = model.visibleCues
+            // Cue times are on the source axis, so they are compared with sourceTime.
+            let now = time.sourceTime
+            let cues = self.cues.filter { now >= $0.startTime && now <= $0.endTime }
             ZStack {
                 ForEach(cues) { cue in
                     if case let .image(image) = cue.body {

@@ -21,7 +21,7 @@ struct PosterCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            RemoteImage(url: item.poster)
+            RemoteImage(url: item.poster, targetWidth: width)
                 .frame(width: width, height: width * 1.5)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(alignment: .topTrailing) {
@@ -53,7 +53,7 @@ struct ContinueCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .bottomLeading) {
-                RemoteImage(url: entry.episode?.thumbnail ?? entry.item.background ?? entry.item.poster)
+                RemoteImage(url: entry.episode?.thumbnail ?? entry.item.background ?? entry.item.poster, targetWidth: width * 0.75)
                     .frame(width: width, height: width * 9 / 16)
                 LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
                 HStack(spacing: 8) {

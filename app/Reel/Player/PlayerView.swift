@@ -176,10 +176,10 @@ struct PlayerView: View {
 
     private var bottomBar: some View {
         VStack(spacing: 12) {
-            Scrubber(
-                value: scrubbing ?? model.currentTime,
-                buffered: model.buffered,
+            TimelineBar(
+                time: model.time,
                 duration: model.duration,
+                scrubbing: scrubbing,
                 onChange: { scrubbing = $0; hideTask?.cancel() },
                 onCommit: { value in
                     model.seek(to: value)
@@ -187,13 +187,6 @@ struct PlayerView: View {
                     scheduleHide()
                 }
             )
-            HStack {
-                Text(Self.clock(scrubbing ?? model.currentTime))
-                Spacer()
-                Text("-" + Self.clock(max(0, model.duration - (scrubbing ?? model.currentTime))))
-            }
-            .font(.caption.weight(.semibold).monospacedDigit())
-            .foregroundStyle(.white.opacity(0.85))
 
             HStack(spacing: 10) {
                 barButton("Sources", "list.bullet.rectangle") { playback.switchSource(for: session.target) }
@@ -296,13 +289,36 @@ struct PlayerView: View {
 
 // MARK: - Pieces
 
+/// The scrubber and time labels: the only part of the controls that follows the clock.
+private struct TimelineBar: View {
+    @ObservedObject var time: PlaybackTime
+    let duration: Double
+    let scrubbing: Double?
+    let onChange: (Double) -> Void
+    let onCommit: (Double) -> Void
+
+    var body: some View {
+        let shown = scrubbing ?? time.currentTime
+        VStack(spacing: 12) {
+            Scrubber(value: shown, buffered: time.buffered, duration: duration, onChange: onChange, onCommit: onCommit)
+            HStack {
+                Text(PlayerView.clock(shown))
+                Spacer()
+                Text("-" + PlayerView.clock(max(0, duration - shown)))
+            }
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.85))
+        }
+    }
+}
+
 /// Shown until the engine has a first picture: the title's art, blurred, with a spinner.
 private struct StartupCover: View {
     let session: PlayerSession
 
     var body: some View {
         ZStack {
-            RemoteImage(url: session.target.episode?.thumbnail ?? session.target.item.background)
+            RemoteImage(url: session.target.episode?.thumbnail ?? session.target.item.background, targetWidth: 200)
                 .blur(radius: 30)
                 .overlay(Color.black.opacity(0.55))
                 .ignoresSafeArea()

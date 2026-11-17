@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
 enum Theme {
     static let accent = Color(red: 0.957, green: 0.420, blue: 0.659)
@@ -26,34 +27,58 @@ enum Theme {
 
 // MARK: - Images
 
-/// Decoded images shared across the app, so scrolling back to a row doesn't reload it.
+/// Decoded images, shared across the app. Two rules keep memory flat however far you scroll:
+/// images are decoded at the size they are shown at (ImageIO thumbnailing, which never holds the
+/// full-size bitmap; a 1920x1080 backdrop is about 8 MB decoded), and the cache is charged by
+/// decoded bytes, not by count. Decoding runs off the actor so images decode in parallel.
 actor ImageLoader {
     static let shared = ImageLoader()
-    private let cache = NSCache<NSURL, UIImage>()
-    private var inFlight: [URL: Task<UIImage?, Never>] = [:]
+    private let cache = NSCache<NSString, UIImage>()
+    private var inFlight: [String: Task<UIImage?, Never>] = [:]
 
-    init() { cache.countLimit = 400 }
+    init() {
+        cache.totalCostLimit = 150 << 20   // ~150 MB of decoded pixels; NSCache also sheds under memory pressure
+    }
 
-    func cached(_ url: URL) -> UIImage? { cache.object(forKey: url as NSURL) }
-
-    func image(for url: URL) async -> UIImage? {
-        if let image = cache.object(forKey: url as NSURL) { return image }
-        if let task = inFlight[url] { return await task.value }
-        let task = Task<UIImage?, Never> {
-            guard let (data, _) = try? await HTTP.session.data(from: url), let image = UIImage(data: data) else { return nil }
-            return await image.byPreparingForDisplay() ?? image
+    func image(for url: URL, maxPixelSize: Int) async -> UIImage? {
+        // Bucket the size so slightly different layouts share one decode.
+        let bucket = max(64, ((maxPixelSize + 127) / 128) * 128)
+        let key = "\(url.absoluteString)#\(bucket)"
+        if let image = cache.object(forKey: key as NSString) { return image }
+        if let task = inFlight[key] { return await task.value }
+        let task = Task.detached(priority: .utility) { () -> UIImage? in
+            guard let (data, _) = try? await HTTP.session.data(from: url) else { return nil }
+            return Self.downsample(data, maxPixelSize: bucket)
         }
-        inFlight[url] = task
+        inFlight[key] = task
         let image = await task.value
-        inFlight[url] = nil
-        if let image { cache.setObject(image, forKey: url as NSURL) }
+        inFlight[key] = nil
+        if let image, let cg = image.cgImage {
+            cache.setObject(image, forKey: key as NSString, cost: cg.bytesPerRow * cg.height)
+        }
         return image
+    }
+
+    nonisolated static func downsample(_ data: Data, maxPixelSize: Int) -> UIImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
+        let options = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,      // decode here, not on the main thread at draw time
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ] as CFDictionary
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+        return UIImage(cgImage: image)
     }
 }
 
 struct RemoteImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    /// The widest this image is drawn, in points; it is decoded at that size times the screen scale.
+    var targetWidth: CGFloat = 400
+    @Environment(\.displayScale) private var scale
     @State private var image: UIImage?
 
     var body: some View {
@@ -70,7 +95,9 @@ struct RemoteImage: View {
         .animation(.easeOut(duration: 0.25), value: image != nil)
         .task(id: url) {
             guard let url else { image = nil; return }
-            image = await ImageLoader.shared.image(for: url)
+            // Posters are taller than wide, so the long side is ~1.5x the width; backdrops are wider.
+            let pixels = Int(targetWidth * scale * 1.5)
+            image = await ImageLoader.shared.image(for: url, maxPixelSize: min(pixels, 2400))
         }
     }
 }
@@ -99,7 +126,7 @@ struct TitleLogo: View {
         }
         .task(id: item.logo) {
             guard let url = item.logo else { return }
-            logo = await ImageLoader.shared.image(for: url)
+            logo = await ImageLoader.shared.image(for: url, maxPixelSize: 900)
             failed = logo == nil
         }
     }
