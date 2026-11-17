@@ -59,13 +59,16 @@ actor ImageLoader {
         return image
     }
 
-    /// Decodes at most `maxPixelSize` on the long side. Metahub serves posters as JPEG or WebP
-    /// depending on the title, and ImageIO's thumbnailer returns nothing for its WebP files, which
-    /// left most posters blank. JPEG and PNG take the fast ImageIO path; anything it refuses goes
-    /// through UIImage, which decodes every format the system knows, and is scaled the same way.
+    /// Decodes at most `maxPixelSize` on the long side. Metahub serves posters as JPEG for some
+    /// titles and WebP for most, and on devices ImageIO's thumbnailer gave nothing usable for the
+    /// WebP ones (the simulator decodes them fine), which left most posters blank. So only JPEG and
+    /// PNG take the ImageIO thumbnail path; every other format goes through UIImage, the decoder the
+    /// app used before, scaled to the same size.
     nonisolated static func downsample(_ data: Data, maxPixelSize: Int) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) {
+        if let source = CGImageSourceCreateWithData(data as CFData, sourceOptions),
+           let type = CGImageSourceGetType(source) as String?,
+           type == "public.jpeg" || type == "public.png" {
             let options = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceShouldCacheImmediately: true,      // decode here, not on the main thread at draw time
