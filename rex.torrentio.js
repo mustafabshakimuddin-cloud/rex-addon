@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.0.1",
+  version: "1.1.0",
   requiredVersion: "0.0.2",
   description: "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
   author: "Community",
@@ -55,7 +55,18 @@ WidgetMetadata = {
       "体积上限": "Max Size",
       "最少做种数": "Minimum Seeders",
       "TMDB API Key（可选）": "TMDB API Key (optional)",
-      "加载资源": "Load Streams"
+      "加载资源": "Load Streams",
+      "热门影视": "Popular",
+      "来自 Cinemeta 的热门电影与剧集": "Popular movies and series from Cinemeta",
+      "类型": "Type",
+      "电影": "Movies",
+      "剧集": "Series",
+      "榜单": "Chart",
+      "热门": "Popular",
+      "高分": "Top Rated",
+      "分类": "Genre",
+      "全部": "All",
+      "页码": "Page"
     },
     "zh-Hant": {
       "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放": "Torrentio 種子資源，支援 Real-Debrid、AllDebrid、Premiumize、TorBox 等網盤直連播放",
@@ -87,7 +98,18 @@ WidgetMetadata = {
       "体积上限": "體積上限",
       "最少做种数": "最少做種數",
       "TMDB API Key（可选）": "TMDB API Key（選填）",
-      "加载资源": "載入資源"
+      "加载资源": "載入資源",
+      "热门影视": "熱門影視",
+      "来自 Cinemeta 的热门电影与剧集": "來自 Cinemeta 的熱門電影與劇集",
+      "类型": "類型",
+      "电影": "電影",
+      "剧集": "劇集",
+      "榜单": "榜單",
+      "热门": "熱門",
+      "高分": "高分",
+      "分类": "分類",
+      "全部": "全部",
+      "页码": "頁碼"
     }
   },
   globalParams: [
@@ -231,6 +253,73 @@ WidgetMetadata = {
   ],
   modules: [
     {
+      // Rex 不在模块列表中显示只有播放资源的模块，因此提供一个列表：
+      // Cinemeta（Stremio 官方目录）的热门影视，条目即可直接用 Torrentio 播放。
+      id: "popular",
+      title: "热门影视",
+      description: "来自 Cinemeta 的热门电影与剧集",
+      functionName: "popular",
+      cacheDuration: 3600,
+      params: [
+        {
+          name: "mediaType",
+          title: "类型",
+          type: "enumeration",
+          value: "movie",
+          enumOptions: [
+            { title: "电影", value: "movie" },
+            { title: "剧集", value: "tv" },
+          ],
+        },
+        {
+          name: "catalog",
+          title: "榜单",
+          type: "enumeration",
+          value: "top",
+          enumOptions: [
+            { title: "热门", value: "top" },
+            { title: "高分", value: "imdbRating" },
+          ],
+        },
+        {
+          name: "genre",
+          title: "分类",
+          type: "enumeration",
+          value: "",
+          enumOptions: [
+            { title: "全部", value: "" },
+            { title: "Action", value: "Action" },
+            { title: "Adventure", value: "Adventure" },
+            { title: "Animation", value: "Animation" },
+            { title: "Biography", value: "Biography" },
+            { title: "Comedy", value: "Comedy" },
+            { title: "Crime", value: "Crime" },
+            { title: "Documentary", value: "Documentary" },
+            { title: "Drama", value: "Drama" },
+            { title: "Family", value: "Family" },
+            { title: "Fantasy", value: "Fantasy" },
+            { title: "History", value: "History" },
+            { title: "Horror", value: "Horror" },
+            { title: "Mystery", value: "Mystery" },
+            { title: "Romance", value: "Romance" },
+            { title: "Sci-Fi", value: "Sci-Fi" },
+            { title: "Sport", value: "Sport" },
+            { title: "Thriller", value: "Thriller" },
+            { title: "War", value: "War" },
+            { title: "Western", value: "Western" },
+            { title: "Reality-TV", value: "Reality-TV" },
+            { title: "Talk-Show", value: "Talk-Show" },
+            { title: "Game-Show", value: "Game-Show" },
+          ],
+        },
+        {
+          name: "page",
+          title: "页码",
+          type: "page",
+        },
+      ],
+    },
+    {
       // id 需固定为 loadResource
       id: "loadResource",
       title: "加载资源",
@@ -243,6 +332,8 @@ WidgetMetadata = {
 };
 
 const DEFAULT_TORRENTIO_SERVER = "https://torrentio.strem.fun";
+const CINEMETA_BASE = "https://cinemeta-catalogs.strem.io";
+const CINEMETA_PAGE_SIZE = 50;
 const TORRENTIO_DEBRID_SERVICES = {
   realdebrid: "RD",
   alldebrid: "AD",
@@ -446,6 +537,44 @@ function toVideoResources(streams, showMagnets) {
     }
   }
   return resources;
+}
+
+// Cinemeta 条目带 TMDB ID（moviedb_id）时按 Rex 官方模块的方式返回 tmdb 条目，
+// 进入内置详情页；没有时退回 imdb 条目。两者都能让 loadResource 拿到可查询的 ID。
+function cinemetaItem(meta, mediaType) {
+  const imdbId = normalizeImdbId(meta.imdb_id || meta.id);
+  const tmdbId = normalizeTmdbId(meta.moviedb_id);
+  if (!imdbId && !tmdbId) return null;
+  const rating = Number(meta.imdbRating);
+  const item = {
+    id: tmdbId ? Number(tmdbId) : imdbId,
+    type: tmdbId ? "tmdb" : "imdb",
+    title: cleanParam(meta.name),
+    description: cleanParam(meta.description),
+    releaseDate: cleanParam(meta.released).slice(0, 10) || cleanParam(meta.releaseInfo),
+    mediaType,
+    genreTitle: Array.isArray(meta.genres) ? meta.genres.slice(0, 3).join(" / ") : "",
+  };
+  if (Number.isFinite(rating) && rating > 0) item.rating = rating;
+  if (meta.poster) item.coverUrl = meta.poster;
+  return item;
+}
+
+async function popular(params) {
+  const mediaType = isTvType(params.mediaType) ? "tv" : "movie";
+  const catalog = cleanParam(params.catalog) === "imdbRating" ? "imdbRating" : "top";
+  const page = Math.max(1, parseInt(cleanParam(params.page), 10) || 1);
+  const extras = [];
+  const genre = cleanParam(params.genre);
+  if (genre) extras.push(`genre=${encodeURIComponent(genre)}`);
+  if (page > 1) extras.push(`skip=${(page - 1) * CINEMETA_PAGE_SIZE}`);
+
+  const stremioType = mediaType === "tv" ? "series" : "movie";
+  const path = `${stremioType}/${catalog}${extras.length ? `/${extras.join("&")}` : ""}.json`;
+  const response = await Widget.http.get(`${CINEMETA_BASE}/${catalog}/catalog/${path}`, { headers: torrentioHeaders() });
+  const body = parseBody(response);
+  const metas = body && Array.isArray(body.metas) ? body.metas : [];
+  return metas.map((meta) => cinemetaItem(meta, mediaType)).filter(Boolean);
 }
 
 async function loadResource(params) {

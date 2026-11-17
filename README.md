@@ -8,6 +8,10 @@ Lists torrent streams from [Torrentio](https://torrentio.strem.fun) when you sta
 movie or episode, and plays them through a debrid service (Real-Debrid, AllDebrid, Premiumize,
 TorBox, Debrid-Link, EasyDebrid, Offcloud, Put.io).
 
+It also provides a **Popular** list (movies or series, popular or top rated, by genre) from
+Cinemeta, Stremio's catalogue. That list is also what makes the module visible: Rex does not
+show an imported module in its module list when the module only provides playback sources.
+
 ### Install
 
 Add this repository as a **module collection** in Rex (Settings → Modules → Add via Link):
@@ -52,6 +56,7 @@ When you change `rex.torrentio.js`, bump `version` in its `WidgetMetadata` **and
   torrent hashes, which a regular video player cannot open. The module then reports how many
   torrents it found instead of listing sources that will not play.
 - **Torrentio looks titles up by IMDb ID.** If Rex passes only a TMDB ID, the module converts
-  it through Rex's built-in TMDB access when available, then through the optional TMDB API key.
+  it through Rex's built-in TMDB access (`Widget.tmdb`), and only needs the optional TMDB API
+  key if that is unavailable.
 - **Your debrid key is part of every playback link** (`/resolve/<service>/<key>/…`), exactly as
   in Stremio. It is stored in Rex's settings on your device, never in this repository.
