@@ -16,12 +16,12 @@
  *     因此默认隐藏这些结果；可在「磁力链接」中选择显示，返回 magnet: 链接。
  */
 WidgetMetadata = {
-  id: "rex.torrentio",
+  id: "community.torrentio",
   title: "Torrentio",
-  version: "1.0.0",
+  version: "1.0.1",
   requiredVersion: "0.0.2",
   description: "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
-  author: "Rex",
+  author: "Community",
   site: "https://torrentio.strem.fun",
   iconurl: "https://torrentio.strem.fun/images/logo_v1.png",
   i18n: {

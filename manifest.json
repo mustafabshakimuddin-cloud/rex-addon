@@ -1,0 +1,24 @@
+{
+  "title": "Torrentio",
+  "description": "Torrentio torrent streams for playback through a debrid service",
+  "icon": "https://torrentio.strem.fun/images/logo_v1.png",
+  "widgets": [
+    {
+      "id": "community.torrentio",
+      "title": "Torrentio",
+      "version": "1.0.1",
+      "requiredVersion": "0.0.2",
+      "description": "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
+      "author": "Community",
+      "url": "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/rex.torrentio.js",
+      "i18n": {
+        "en": {
+          "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放": "Torrent streams from Torrentio, playable through Real-Debrid, AllDebrid, Premiumize, TorBox and other debrid services"
+        },
+        "zh-Hant": {
+          "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放": "Torrentio 種子資源，支援 Real-Debrid、AllDebrid、Premiumize、TorBox 等網盤直連播放"
+        }
+      }
+    }
+  ]
+}

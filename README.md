@@ -10,13 +10,24 @@ TorBox, Debrid-Link, EasyDebrid, Offcloud, Put.io).
 
 ### Install
 
-In Rex, add a module by URL:
+Add this repository as a **module collection** in Rex (Settings → Modules → Add via Link):
+
+```
+https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/manifest.json
+```
+
+It appears on the Modules screen as its own collection, beside "Rex official modules", and
+Rex offers updates when the version in `manifest.json` goes up. To install the module on its
+own instead, use the module link:
 
 ```
 https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/rex.torrentio.js
 ```
 
-Then open the module's settings and choose your debrid service and paste its API key.
+Then open the module's settings, choose your debrid service and paste its API key.
+
+When you change `rex.torrentio.js`, bump `version` in its `WidgetMetadata` **and** in
+`manifest.json` together, or Rex will not see the update.
 
 ### Settings
 
