@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.2.1",
+  version: "1.2.2",
   // 详情页（loadDetail）缓存时长，秒。
   detailCacheDuration: 3600,
   requiredVersion: "0.0.2",
@@ -608,6 +608,7 @@ function cinemetaItem(meta, mediaType) {
 }
 
 async function popular(params) {
+  recordCall("list", params);
   rememberSettings(params);
   const mediaType = isTvType(params.mediaType) ? "tv" : "movie";
   const catalog = cleanParam(params.catalog) === "imdbRating" ? "imdbRating" : "top";
@@ -634,7 +635,8 @@ async function loadDetail(input, ...rest) {
     if (extra && typeof extra === "object") rememberSettings(extra);
   }
   const settings = withSettings({});
-  const settingsKnown = Boolean(rememberedSettings);
+  const settingsKnown = Boolean(loadRememberedSettings());
+  const argShape = [input, ...rest].map((arg) => (arg && typeof arg === "object" ? `{${Object.keys(arg).join(",")}}` : typeof arg)).join(", ");
   torrentioLog(`loadDetail link=${cleanParam(link)} args=${1 + rest.length} settingsKnown=${settingsKnown}`, settings);
   if (!parsed) throw new Error("无效的 Torrentio 链接");
 
@@ -657,7 +659,15 @@ async function loadDetail(input, ...rest) {
 
   // 诊断状态行（临时）：放在简介最前面，用户在详情页就能看到。
   const status = [`Torrentio ${WidgetMetadata.version}`];
-  status.push(settingsKnown ? `settings: ${debridService(settings) ? debridService(settings).service : "no debrid key"}` : "settings: not received yet");
+  if (settingsKnown) {
+    const minutes = Math.max(0, Math.round((Date.now() - (loadRememberedSettings().savedAt || Date.now())) / 60000));
+    status.push(`settings: ${debridService(settings) ? debridService(settings).service : "no debrid key"} (saved ${minutes} min ago)`);
+  } else {
+    status.push("settings: not received yet");
+  }
+  status.push(lastCallText("list"));
+  status.push(`detail args: ${argShape}`);
+  status.push(`storage: ${typeof Widget !== "undefined" && Widget.storage ? "yes" : "no"}`);
   const playable = mediaType === "movie" || parsed.episode !== null;
   if (playable) {
     try {
@@ -719,22 +729,53 @@ async function loadDetail(input, ...rest) {
 }
 
 // ---- 设置记忆与诊断 ----
-// loadDetail(link) 可能拿不到全局设置（网盘 Key 等），因此记住最近一次调用里出现的设置。
-// 只保存在当前 JS 引擎内存中，不写入 storage。诊断信息不含任何密钥，可写入 storage。
+// loadDetail(link) 拿不到全局设置（网盘 Key 等），且与列表不在同一个 JS 引擎里，内存不共享。
+// 因此把最近一次调用里出现的设置写入本模块自己的 Widget.storage（仅本机、仅本模块），
+// 详情页从那里读取。诊断信息只记录参数名，不记录任何值。
 const SETTING_NAMES = WidgetMetadata.globalParams.map((param) => param.name);
 let rememberedSettings = null;
 
 function rememberSettings(params) {
   if (!params || typeof params !== "object") return;
   if (!SETTING_NAMES.some((name) => params[name] !== undefined)) return;
-  rememberedSettings = {};
+  rememberedSettings = { savedAt: Date.now() };
   for (const name of SETTING_NAMES) {
     if (params[name] !== undefined) rememberedSettings[name] = params[name];
   }
+  storageSet("torrentio.settings", JSON.stringify(rememberedSettings));
+}
+
+function loadRememberedSettings() {
+  if (rememberedSettings) return rememberedSettings;
+  try {
+    rememberedSettings = JSON.parse(storageGet("torrentio.settings") || "null");
+  } catch (error) {
+    rememberedSettings = null;
+  }
+  return rememberedSettings;
+}
+
+// 只记参数名：用来判断 Rex 有没有把全局设置传给列表函数。
+function recordCall(name, params) {
+  const keys = params && typeof params === "object" ? Object.keys(params).sort() : [typeof params];
+  storageSet(`torrentio.call.${name}`, JSON.stringify({ at: Date.now(), keys }));
+}
+
+function lastCallText(name) {
+  let last = null;
+  try {
+    last = JSON.parse(storageGet(`torrentio.call.${name}`) || "null");
+  } catch (error) {
+    last = null;
+  }
+  if (!last || !last.at) return `${name}: never called`;
+  const minutes = Math.max(0, Math.round((Date.now() - last.at) / 60000));
+  return `${name} ${minutes} min ago got [${last.keys.join(", ")}]`;
 }
 
 function withSettings(params) {
-  const merged = { ...(rememberedSettings || {}) };
+  const merged = { ...(loadRememberedSettings() || {}) };
+  delete merged.savedAt;
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== "") merged[key] = value;
   }
@@ -816,6 +857,7 @@ async function fetchTorrentioResources(params, imdbId, target) {
 }
 
 async function loadResource(rawParams) {
+  recordCall("loadResource", rawParams);
   rememberSettings(rawParams);
   const params = withSettings(rawParams);
   torrentioLog(`loadResource params ${describeParams(rawParams)}`, params);
