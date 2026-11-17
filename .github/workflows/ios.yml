@@ -1,0 +1,73 @@
+name: iOS app
+
+on:
+  push:
+    branches: [ main, "claude/**" ]
+    paths: [ "app/**", ".github/workflows/ios.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Unsigned .ipa
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      # iPhone Duo support arrives with Xcode 27.1. Use the newest Xcode 27 on the runner and say
+      # so loudly if there is none, rather than silently building with an older SDK.
+      - name: Select Xcode
+        run: |
+          ls -d /Applications/Xcode*.app | sort -V
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            echo "::warning::No Xcode 27 on this runner; falling back to the newest Xcode (no iPhone Duo support)."
+            XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          fi
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i ios
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Build for device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Reel.xcodeproj \
+            -scheme Reel \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee build.log | grep -E "error:|warning: .*deprecated|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" build.log
+
+      - name: Show errors
+        if: failure()
+        run: grep -E "error:" build.log | sort -u | head -80 || true
+
+      - name: Package .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Reel.app Payload/
+          zip -qry Reel-unsigned.ipa Payload
+          ls -lh Reel-unsigned.ipa
+
+      # Unsigned: install with AltStore or Sideloadly, which sign it with your Apple ID.
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Reel-unsigned-ipa
+          path: app/Reel-unsigned.ipa
+          retention-days: 30

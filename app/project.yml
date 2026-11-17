@@ -1,0 +1,64 @@
+# XcodeGen spec. Generate the Xcode project with:  cd app && xcodegen generate
+name: Reel
+options:
+  bundleIdPrefix: community.reel
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  VLCKitSPM:
+    url: https://github.com/tylerjonesio/vlckit-spm
+    exactVersion: 3.6.0
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Reel:
+    type: application
+    platform: iOS
+    sources:
+      - path: Reel
+    dependencies:
+      - package: VLCKitSPM
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: community.reel.app
+        # iPhone and iPad. No UIRequiresFullScreen: the app must resize freely (iPhone Duo,
+        # iPad windows); that key is deprecated and ignored when built with the iOS 27 SDK.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        DEAD_CODE_STRIPPING: YES
+    info:
+      path: Reel/Info.plist
+      properties:
+        CFBundleDisplayName: Reel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        UILaunchScreen:
+          UIColorName: ""
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+        # Every orientation everywhere: on iPhone Duo's inner display and in iPad windows the
+        # app is resized rather than rotated, and locks are treated as preferences anyway.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIUserInterfaceStyle: Dark
+        UIBackgroundModes:
+          - audio
+        # Debrid download links are HTTPS, but some providers hand out plain HTTP media links.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsForMedia: true
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
