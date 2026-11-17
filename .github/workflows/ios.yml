@@ -124,9 +124,15 @@ jobs:
               echo "::error::$NAME: the app is not running 25 s after launch (crashed?)"
               xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
             fi
-            xcrun simctl io "$UDID" screenshot "shots/$SLUG.png"
-            sips -Z 640 -s format jpeg -s formatOptions 55 "shots/$SLUG.png" --out "shots/$SLUG-small.jpg" >/dev/null
-            echo "=== SCREENSHOT $SLUG BEGIN ==="; base64 -i "shots/$SLUG-small.jpg"; echo "=== SCREENSHOT $SLUG END ==="
+            # iPhone Duo has two displays (outer and inner); capture each one simctl lists.
+            DISPLAYS=$(xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
+            [ -z "$DISPLAYS" ] && DISPLAYS="default"
+            for D in $DISPLAYS; do
+              SHOT="$SLUG${D#--display=}"; [ "$D" = "default" ] && SHOT="$SLUG"
+              if [ "$D" = "default" ]; then xcrun simctl io "$UDID" screenshot "shots/$SHOT.png"; else xcrun simctl io "$UDID" screenshot "$D" "shots/$SHOT.png"; fi
+              sips -Z 640 -s format jpeg -s formatOptions 55 "shots/$SHOT.png" --out "shots/$SHOT-small.jpg" >/dev/null
+              echo "=== SCREENSHOT $SHOT BEGIN ==="; base64 -i "shots/$SHOT-small.jpg"; echo "=== SCREENSHOT $SHOT END ==="
+            done
             xcrun simctl shutdown "$UDID" || true
           done
 
