@@ -161,13 +161,20 @@ jobs:
           APP=build/Build/Products/Debug-iphonesimulator/Reel.app
           mkdir -p shots
           for NAME in "iPhone Duo" "iPhone 17"; do
-            UDID=$(xcrun simctl list devices available -j | python3 -c "
+            # Newest runtime first; a runner image can list a device whose runtime is not installed
+            # ("The iOS 27.2 simulator runtime is not available"), so fall back to the next one.
+            CANDIDATES=$(xcrun simctl list devices available -j | python3 -c "
           import json,sys; d=json.load(sys.stdin)['devices']
           c=[(r,x['udid']) for r,l in d.items() for x in l if x['name']=='$NAME']
-          print(sorted(c)[-1][1] if c else '')")
-            if [ -z "$UDID" ]; then echo "::warning::No $NAME simulator"; continue; fi
-            xcrun simctl boot "$UDID" || true
-            xcrun simctl bootstatus "$UDID" -b
+          print(' '.join(u for _,u in sorted(c, reverse=True)))")
+            UDID=""
+            for C in $CANDIDATES; do
+              xcrun simctl boot "$C" >/dev/null 2>&1 || true
+              if xcrun simctl bootstatus "$C" -b >/dev/null 2>&1; then UDID="$C"; break; fi
+              echo "$NAME $C did not boot, trying the next runtime"
+            done
+            if [ -z "$UDID" ]; then echo "::warning::No bootable $NAME simulator on this runner"; continue; fi
+            xcrun simctl list devices | grep "$UDID" || true
             xcrun simctl install "$UDID" "$APP"
             xcrun simctl launch "$UDID" community.reel.app
             sleep 25
