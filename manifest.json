@@ -6,7 +6,7 @@
     {
       "id": "community.torrentio",
       "title": "Torrentio",
-      "version": "1.2.2",
+      "version": "1.3.0",
       "requiredVersion": "0.0.2",
       "description": "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
       "author": "Community",
@@ -17,6 +17,23 @@
         },
         "zh-Hant": {
           "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放": "Torrentio 種子資源，支援 Real-Debrid、AllDebrid、Premiumize、TorBox 等網盤直連播放"
+        }
+      }
+    },
+    {
+      "id": "community.torrentio.streams",
+      "title": "Torrentio Streams",
+      "version": "1.3.0",
+      "requiredVersion": "0.0.2",
+      "description": "Torrentio 播放资源，设置在 Torrentio 模块中填写",
+      "author": "Community",
+      "url": "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/torrentio-streams.js",
+      "i18n": {
+        "en": {
+          "Torrentio 播放资源，设置在 Torrentio 模块中填写": "Torrentio playback sources; configure them in the Torrentio module"
+        },
+        "zh-Hant": {
+          "Torrentio 播放资源，设置在 Torrentio 模块中填写": "Torrentio 播放資源，設定在 Torrentio 模組中填寫"
         }
       }
     }

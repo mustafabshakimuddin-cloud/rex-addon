@@ -16,6 +16,20 @@ Rex's own TMDB pages is not tied to the module, so Rex shows "No resources avail
 The list is also what makes the module visible at all: Rex leaves an imported module out of its
 module list when it only provides playback sources.
 
+### Two widgets, one source file
+
+The collection holds two widgets built from the same code:
+
+- **Torrentio** (`rex.torrentio.js`): the settings, the Popular list and its detail pages.
+- **Torrentio Streams** (`torrentio-streams.js`): only the `loadResource` stream module. Rex 1.1
+  drops a stream module from a widget that also has a list, so it is published on its own as well.
+  It has no settings: it reads the ones Torrentio saves to `Widget.sharedCache` (namespace
+  `community.torrentio`) whenever its list is opened. Rex's shared cache can be read by any module
+  that knows the namespace, which includes the debrid key; install only modules you trust.
+
+Edit only `rex.torrentio.js`, bump its `version`, then run `node tools/build.js`, which regenerates
+`torrentio-streams.js` and `manifest.json` with matching versions.
+
 ### Install
 
 Add this repository as a **module collection** in Rex (Settings → Modules → Add via Link):
@@ -34,8 +48,8 @@ https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/rex.t
 
 Then open the module's settings, choose your debrid service and paste its API key.
 
-When you change `rex.torrentio.js`, bump `version` in its `WidgetMetadata` **and** in
-`manifest.json` together, or Rex will not see the update.
+When you change `rex.torrentio.js`, bump `version` and run `node tools/build.js`, or Rex will
+not see the update.
 
 ### Settings
 

@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.2.2",
+  version: "1.3.0",
   // 详情页（loadDetail）缓存时长，秒。
   detailCacheDuration: 3600,
   requiredVersion: "0.0.2",
@@ -668,6 +668,7 @@ async function loadDetail(input, ...rest) {
   status.push(lastCallText("list"));
   status.push(`detail args: ${argShape}`);
   status.push(`storage: ${typeof Widget !== "undefined" && Widget.storage ? "yes" : "no"}`);
+  status.push(`shared: ${typeof Widget !== "undefined" && Widget.sharedCache ? "yes" : "no"}`);
   const playable = mediaType === "movie" || parsed.episode !== null;
   if (playable) {
     try {
@@ -732,7 +733,13 @@ async function loadDetail(input, ...rest) {
 // loadDetail(link) 拿不到全局设置（网盘 Key 等），且与列表不在同一个 JS 引擎里，内存不共享。
 // 因此把最近一次调用里出现的设置写入本模块自己的 Widget.storage（仅本机、仅本模块），
 // 详情页从那里读取。诊断信息只记录参数名，不记录任何值。
-const SETTING_NAMES = WidgetMetadata.globalParams.map((param) => param.name);
+// 固定列表而不是读 WidgetMetadata.globalParams：同一份代码也用于没有设置项的「Torrentio Streams」模块。
+const SETTING_NAMES = [
+  "server", "debridService", "debridKey", "cachedOnly", "showMagnets", "providers", "qualityFilter",
+  "sort", "limit", "language", "sizeFilter", "minSeeders", "tmdbApiKey",
+];
+// 两个模块之间共享设置与诊断用的命名空间（Widget.sharedCache 跨模块可读）。
+const SHARED_NAMESPACE = "community.torrentio";
 let rememberedSettings = null;
 
 function rememberSettings(params) {
@@ -743,15 +750,41 @@ function rememberSettings(params) {
     if (params[name] !== undefined) rememberedSettings[name] = params[name];
   }
   storageSet("torrentio.settings", JSON.stringify(rememberedSettings));
+  sharedSet("settings", JSON.stringify(rememberedSettings));
+}
+
+function sharedGet(key) {
+  try {
+    return typeof Widget !== "undefined" && Widget.sharedCache ? Widget.sharedCache.get(SHARED_NAMESPACE, key) : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function sharedSet(key, value) {
+  try {
+    if (typeof Widget !== "undefined" && Widget.sharedCache) Widget.sharedCache.set(SHARED_NAMESPACE, key, value);
+  } catch (error) {
+    // 共享缓存不可用时，各模块仍可用自己的 storage。
+  }
+}
+
+function parseJSON(value) {
+  try {
+    return typeof value === "string" ? JSON.parse(value) : (value || null);
+  } catch (error) {
+    return null;
+  }
 }
 
 function loadRememberedSettings() {
   if (rememberedSettings) return rememberedSettings;
-  try {
-    rememberedSettings = JSON.parse(storageGet("torrentio.settings") || "null");
-  } catch (error) {
-    rememberedSettings = null;
-  }
+  // 本模块自己存过的优先；没有时读另一个模块经共享缓存写入的设置。
+  const own = parseJSON(storageGet("torrentio.settings"));
+  const shared = parseJSON(sharedGet("settings"));
+  const candidates = [own, shared].filter((item) => item && typeof item === "object");
+  candidates.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  rememberedSettings = candidates[0] || null;
   return rememberedSettings;
 }
 
@@ -799,20 +832,20 @@ function storageSet(key, value) {
 }
 
 function recordLoadResource(summary) {
-  storageSet("torrentio.lastLoadResource", JSON.stringify({ at: Date.now(), ...summary }));
+  const record = JSON.stringify({ at: Date.now(), by: WidgetMetadata.title, ...summary });
+  storageSet("torrentio.lastLoadResource", record);
+  sharedSet("lastLoadResource", record);
 }
 
 function lastLoadResourceText() {
-  let last = null;
-  try {
-    last = JSON.parse(storageGet("torrentio.lastLoadResource") || "null");
-  } catch (error) {
-    last = null;
-  }
-  if (!last || !last.at) return "Rex has never called loadResource";
+  const records = [parseJSON(storageGet("torrentio.lastLoadResource")), parseJSON(sharedGet("lastLoadResource"))]
+    .filter((item) => item && item.at)
+    .sort((a, b) => b.at - a.at);
+  const last = records[0];
+  if (!last) return "Rex has never called loadResource";
   const minutes = Math.max(0, Math.round((Date.now() - last.at) / 60000));
   const outcome = last.error ? `error: ${last.error}` : `${last.count} sources`;
-  return `Rex last called loadResource ${minutes} min ago for ${last.target || "?"} (${outcome})`;
+  return `Rex last called loadResource ${minutes} min ago on ${last.by || "?"} for ${last.target || "?"} (${outcome})`;
 }
 
 function torrentioTarget(params, linked) {
