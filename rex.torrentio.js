@@ -18,7 +18,9 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.1.1",
+  version: "1.2.0",
+  // 详情页（loadDetail）缓存时长，秒。
+  detailCacheDuration: 3600,
   requiredVersion: "0.0.2",
   description: "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
   author: "Community",
@@ -334,6 +336,7 @@ WidgetMetadata = {
 const DEFAULT_TORRENTIO_SERVER = "https://torrentio.strem.fun";
 const CINEMETA_BASE = "https://cinemeta-catalogs.strem.io";
 const CINEMETA_PAGE_SIZE = 50;
+const CINEMETA_META = "https://v3-cinemeta.strem.io/meta";
 const TORRENTIO_DEBRID_SERVICES = {
   realdebrid: "RD",
   alldebrid: "AD",
@@ -557,16 +560,34 @@ function toVideoResources(streams, showMagnets) {
   return resources;
 }
 
-// Cinemeta 条目带 TMDB ID（moviedb_id）时按 Rex 官方模块的方式返回 tmdb 条目，
-// 进入内置详情页；没有时退回 imdb 条目。两者都能让 loadResource 拿到可查询的 ID。
-function cinemetaItem(meta, mediaType) {
-  const imdbId = normalizeImdbId(meta.imdb_id || meta.id);
-  const tmdbId = normalizeTmdbId(meta.moviedb_id);
-  if (!imdbId && !tmdbId) return null;
+// Rex 只对「属于模块自己的条目」调用 loadResource：条目带 link，详情页先调用顶层
+// loadDetail(link)，播放时再调用 loadResource（参数里带同一个 link）。tmdb/imdb 类型
+// 会进入 Rex 内置详情页，与本模块脱钩，因此列表条目一律使用 url 类型 + torrentio: 链接。
+const TORRENTIO_LINK = /^torrentio:(movie|series):(tt\d+)(?::(\d+):(\d+))?$/i;
+
+function makeTorrentioLink(kind, imdbId, season, episode) {
+  const base = `torrentio:${kind}:${imdbId}`;
+  return season === undefined || season === null ? base : `${base}:${season}:${episode}`;
+}
+
+function parseTorrentioLink(value) {
+  const match = cleanParam(value).match(TORRENTIO_LINK);
+  if (!match) return null;
+  return {
+    kind: match[1].toLowerCase(),
+    imdbId: match[2].toLowerCase(),
+    season: match[3] === undefined ? null : Number(match[3]),
+    episode: match[4] === undefined ? null : Number(match[4]),
+  };
+}
+
+function metahubImage(url, size) {
+  return cleanParam(url).replace(/\/(poster|background)\/(small|medium|large)\//, `/$1/${size}/`);
+}
+
+function cinemetaCommon(meta, mediaType) {
   const rating = Number(meta.imdbRating);
   const item = {
-    id: tmdbId ? Number(tmdbId) : imdbId,
-    type: tmdbId ? "tmdb" : "imdb",
     title: cleanParam(meta.name),
     description: cleanParam(meta.description),
     releaseDate: cleanParam(meta.released).slice(0, 10) || cleanParam(meta.releaseInfo),
@@ -574,8 +595,16 @@ function cinemetaItem(meta, mediaType) {
     genreTitle: Array.isArray(meta.genres) ? meta.genres.slice(0, 3).join(" / ") : "",
   };
   if (Number.isFinite(rating) && rating > 0) item.rating = rating;
-  if (meta.poster) item.coverUrl = meta.poster;
+  if (meta.poster) item.posterPath = metahubImage(meta.poster, "medium");
+  if (meta.background) item.backdropPath = meta.background;
   return item;
+}
+
+function cinemetaItem(meta, mediaType) {
+  const imdbId = normalizeImdbId(meta.imdb_id || meta.id);
+  if (!imdbId) return null;
+  const link = makeTorrentioLink(mediaType === "tv" ? "series" : "movie", imdbId);
+  return { id: link, type: "url", link, ...cinemetaCommon(meta, mediaType) };
 }
 
 async function popular(params) {
@@ -595,20 +624,72 @@ async function popular(params) {
   return metas.map((meta) => cinemetaItem(meta, mediaType)).filter(Boolean);
 }
 
+// 详情页：顶层函数，不写进 modules。剧集返回 episodeItems，每集带自己的 link。
+async function loadDetail(input) {
+  const link = typeof input === "object" && input !== null ? (input.link || input.id) : input;
+  const parsed = parseTorrentioLink(link);
+  torrentioLog(`loadDetail link=${cleanParam(link)}`);
+  if (!parsed) throw new Error("无效的 Torrentio 链接");
+
+  const mediaType = parsed.kind === "series" ? "tv" : "movie";
+  const response = await Widget.http.get(
+    `${CINEMETA_META}/${parsed.kind}/${parsed.imdbId}.json`,
+    { headers: torrentioHeaders() }
+  );
+  const body = parseBody(response);
+  const meta = body && body.meta;
+  if (!meta) throw new Error("Cinemeta 没有这部作品的信息");
+
+  const detail = {
+    id: makeTorrentioLink(parsed.kind, parsed.imdbId),
+    type: "url",
+    link: makeTorrentioLink(parsed.kind, parsed.imdbId),
+    ...cinemetaCommon(meta, mediaType),
+  };
+  if (meta.runtime) detail.durationText = cleanParam(meta.runtime);
+  if (mediaType === "movie") return detail;
+
+  const episodes = (Array.isArray(meta.videos) ? meta.videos : [])
+    .map((video) => ({ video, season: Number(video.season), episode: Number(video.episode || video.number) }))
+    .filter(({ season, episode }) => Number.isInteger(season) && season >= 0 && Number.isInteger(episode) && episode > 0)
+    // 正片按季集排序，第 0 季（特别篇）放最后。
+    .sort((a, b) => ((a.season || 1e6) - (b.season || 1e6)) || (a.episode - b.episode));
+  detail.episodeItems = episodes.map(({ video, season, episode }) => {
+    const episodeLink = makeTorrentioLink("series", parsed.imdbId, season, episode);
+    const item = {
+      id: episodeLink,
+      type: "url",
+      link: episodeLink,
+      title: cleanParam(video.name || video.title) || `S${season}E${episode}`,
+      description: cleanParam(video.overview || video.description),
+      releaseDate: cleanParam(video.released || video.firstAired).slice(0, 10),
+      mediaType: "tv",
+      season,
+      episode,
+    };
+    if (video.thumbnail) item.coverUrl = video.thumbnail;
+    return item;
+  });
+  return detail;
+}
+
 async function loadResource(params) {
   torrentioLog(`loadResource params ${describeParams(params)}`, params);
+  // 来自本模块列表/详情的条目带 torrentio: 链接，直接给出 IMDb ID 与季集。
+  const linked = parseTorrentioLink(params.link) || parseTorrentioLink(params.id) || parseTorrentioLink(params.videoUrl);
   const hasEpisode = cleanParam(params.season) !== "" && cleanParam(params.episode) !== "";
-  const isTv = isTvType(params.type) || (hasEpisode && cleanParam(params.type).toLowerCase() !== "movie");
-  const imdbId = await resolveImdbId(params);
-  torrentioLog(`resolved imdbId=${imdbId || "none"} isTv=${isTv}`, params);
+  const isTv = linked ? linked.kind === "series"
+    : isTvType(params.type) || (hasEpisode && cleanParam(params.type).toLowerCase() !== "movie");
+  const imdbId = linked ? linked.imdbId : await resolveImdbId(params);
+  torrentioLog(`resolved imdbId=${imdbId || "none"} isTv=${isTv} fromLink=${Boolean(linked)}`, params);
   if (!imdbId) {
     throw new Error("缺少 IMDb ID：Torrentio 只能按 IMDb ID 查询。可在设置中填写 TMDB API Key 以自动转换。");
   }
 
   let videoId = imdbId;
   if (isTv) {
-    const season = parseInt(cleanParam(params.season), 10);
-    const episode = parseInt(cleanParam(params.episode), 10);
+    const season = linked && linked.season !== null ? linked.season : parseInt(cleanParam(params.season), 10);
+    const episode = linked && linked.episode !== null ? linked.episode : parseInt(cleanParam(params.episode), 10);
     if (!(season >= 0) || !(episode > 0)) {
       throw new Error("缺少季/集信息");
     }

@@ -9,8 +9,12 @@ movie or episode, and plays them through a debrid service (Real-Debrid, AllDebri
 TorBox, Debrid-Link, EasyDebrid, Offcloud, Put.io).
 
 It also provides a **Popular** list (movies or series, popular or top rated, by genre) from
-Cinemeta, Stremio's catalogue. That list is also what makes the module visible: Rex does not
-show an imported module in its module list when the module only provides playback sources.
+Cinemeta, Stremio's catalogue. **Play titles from that list.** Rex asks a module for playback
+sources only for titles that belong to the module: an item carrying a `link`, whose details Rex
+loads through the module's `loadDetail(link)` before calling `loadResource`. A title opened from
+Rex's own TMDB pages is not tied to the module, so Rex shows "No resources available" there.
+The list is also what makes the module visible at all: Rex leaves an imported module out of its
+module list when it only provides playback sources.
 
 ### Install
 
