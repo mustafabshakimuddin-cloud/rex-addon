@@ -27,6 +27,12 @@ struct SourcesSheet: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = SourcesModel()
     @State private var quality = "All"
+    @State private var order: Order = .best
+
+    enum Order: String, CaseIterable, Identifiable {
+        case best = "Best quality", largest = "Largest", smallest = "Smallest", seeders = "Most seeders"
+        var id: String { rawValue }
+    }
 
     private var qualities: [String] {
         let present = Set(model.sources.map(\.quality))
@@ -39,7 +45,19 @@ struct SourcesSheet: View {
         return grouped.keys.sorted { lhs, rhs in
             let a = StreamSource.qualityOrder.firstIndex(of: lhs) ?? 99, b = StreamSource.qualityOrder.firstIndex(of: rhs) ?? 99
             return a == b ? lhs < rhs : a < b
-        }.map { ($0, grouped[$0] ?? []) }
+        }.map { ($0, sorted(grouped[$0] ?? [])) }
+    }
+
+    /// Within a quality: instant sources first, then the chosen order. "Best" keeps Torrentio's own ranking.
+    private func sorted(_ sources: [StreamSource]) -> [StreamSource] {
+        let ranked: [StreamSource]
+        switch order {
+        case .best: ranked = sources
+        case .largest: ranked = sources.sorted { $0.sizeBytes > $1.sizeBytes }
+        case .smallest: ranked = sources.sorted { ($0.sizeBytes == 0 ? .infinity : $0.sizeBytes) < ($1.sizeBytes == 0 ? .infinity : $1.sizeBytes) }
+        case .seeders: ranked = sources.sorted { ($0.seeders ?? 0) > ($1.seeders ?? 0) }
+        }
+        return ranked.filter(\.isCached) + ranked.filter { !$0.isCached }
     }
 
     var body: some View {
@@ -63,7 +81,7 @@ struct SourcesSheet: View {
                             Section("\(group.0) · \(group.1.count)") {
                                 ForEach(group.1) { source in
                                     Button {
-                                        playback.play(target, settings: settings, library: library, source: source)
+                                        playback.play(target, settings: settings, library: library, source: source, fromStart: playback.chooseFromStart)
                                         dismiss()
                                     } label: {
                                         SourceRow(source: source)
@@ -85,15 +103,18 @@ struct SourcesSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") { dismiss() }
                 }
-                if qualities.count > 2 {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Picker("Sort", selection: $order) {
+                            ForEach(Order.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                        if qualities.count > 2 {
                             Picker("Quality", selection: $quality) {
                                 ForEach(qualities, id: \.self) { Text($0).tag($0) }
                             }
-                        } label: {
-                            Label(quality, systemImage: "line.3.horizontal.decrease")
                         }
+                    } label: {
+                        Label("Sort and filter", systemImage: "line.3.horizontal.decrease")
                     }
                 }
             }

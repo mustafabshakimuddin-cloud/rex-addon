@@ -14,6 +14,7 @@ final class AppSettings: ObservableObject {
     @Published var cachedOnly: Bool { didSet { defaults.set(cachedOnly, forKey: Keys.cachedOnly) } }
     @Published var preferredSubtitleLanguage: String { didSet { defaults.set(preferredSubtitleLanguage, forKey: Keys.subtitleLanguage) } }
     @Published var autoplaySubtitles: Bool { didSet { defaults.set(autoplaySubtitles, forKey: Keys.autoplaySubtitles) } }
+    @Published var autoPlayBest: Bool { didSet { defaults.set(autoPlayBest, forKey: Keys.autoPlayBest) } }
 
     init() {
         debridService = DebridService(rawValue: defaults.string(forKey: Keys.service) ?? "") ?? .none
@@ -25,6 +26,7 @@ final class AppSettings: ObservableObject {
         cachedOnly = defaults.object(forKey: Keys.cachedOnly) as? Bool ?? true
         preferredSubtitleLanguage = defaults.string(forKey: Keys.subtitleLanguage) ?? "eng"
         autoplaySubtitles = defaults.object(forKey: Keys.autoplaySubtitles) as? Bool ?? false
+        autoPlayBest = defaults.object(forKey: Keys.autoPlayBest) as? Bool ?? false
     }
 
     var torrentio: TorrentioConfig {
@@ -46,5 +48,6 @@ final class AppSettings: ObservableObject {
         static let cachedOnly = "torrentio.cachedOnly"
         static let subtitleLanguage = "player.subtitleLanguage"
         static let autoplaySubtitles = "player.autoplaySubtitles"
+        static let autoPlayBest = "playback.autoPlayBest"
     }
 }

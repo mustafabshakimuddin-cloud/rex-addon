@@ -18,6 +18,10 @@ final class PlaybackCenter: ObservableObject {
     @Published private(set) var preparing: PlaybackTarget?
     @Published var errorMessage: String?
     @Published var needsDebridSetup = false
+    /// Set to show the source list for a title; RootView presents it.
+    @Published var choosingSource: PlaybackTarget?
+    /// Whether the source picked from that list should start over rather than resume.
+    private(set) var chooseFromStart = false
 
     private var work: Task<Void, Never>?
     private static let maxAttempts = 3
@@ -25,6 +29,11 @@ final class PlaybackCenter: ObservableObject {
     func play(_ target: PlaybackTarget, settings: AppSettings, library: Library, source: StreamSource? = nil, fromStart: Bool = false) {
         guard settings.isDebridConfigured else {
             needsDebridSetup = true
+            return
+        }
+        // Unless "play the best source automatically" is on, Play opens the source list.
+        if source == nil && !settings.autoPlayBest {
+            chooseSource(for: target, fromStart: fromStart)
             return
         }
         work?.cancel()
@@ -66,6 +75,20 @@ final class PlaybackCenter: ObservableObject {
                 self?.preparing = nil
                 self?.errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    func chooseSource(for target: PlaybackTarget, fromStart: Bool = false) {
+        chooseFromStart = fromStart
+        choosingSource = target
+    }
+
+    /// From the player: close it (its progress is saved on the way out), then offer the list.
+    func switchSource(for target: PlaybackTarget) {
+        session = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 650_000_000)  // let the full-screen cover finish closing
+            self.chooseSource(for: target)
         }
     }
 

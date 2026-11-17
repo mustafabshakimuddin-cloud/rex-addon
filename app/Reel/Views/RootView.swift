@@ -51,6 +51,11 @@ struct RootView: View {
                     }
             }
         }
+        .sheet(item: $playback.choosingSource) { target in
+            SourcesSheet(target: target)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .fullScreenCover(item: $playback.session) { session in
             PlayerView(session: session)
         }

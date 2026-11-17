@@ -36,6 +36,7 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Play the best source automatically", isOn: $settings.autoPlayBest)
                 Toggle("Instant sources only", isOn: $settings.cachedOnly)
                 Picker("Sort", selection: $settings.sort) {
                     ForEach(TorrentioSort.allCases) { Text($0.title).tag($0) }
@@ -57,7 +58,7 @@ struct SettingsView: View {
             } header: {
                 Text("Sources")
             } footer: {
-                Text("“Instant” sources are already cached by your debrid service and start straight away.")
+                Text("With automatic play off, Play shows every source so you can pick the quality and size. “Instant” sources are already cached by your debrid service and start straight away.")
             }
 
             Section("Player") {

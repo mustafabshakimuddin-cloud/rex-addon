@@ -27,7 +27,6 @@ struct DetailView: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var model = DetailModel()
     @State private var width: CGFloat = 390
-    @State private var sourcesTarget: PlaybackTarget?
     @State private var expandedOverview = false
 
     private var shown: MediaItem { model.detail?.item ?? item }
@@ -66,11 +65,6 @@ struct DetailView: View {
                 }
                 .accessibilityLabel(library.isInWatchlist(shown) ? "Remove from My List" : "Add to My List")
             }
-        }
-        .sheet(item: $sourcesTarget) { target in
-            SourcesSheet(target: target)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
         }
         .task { await model.load(item, library: library) }
     }
@@ -143,12 +137,15 @@ struct DetailView: View {
                     }
                 }
 
-                Button {
-                    sourcesTarget = target
-                } label: {
-                    Label("Sources", systemImage: "list.bullet.rectangle").font(.headline)
+                // With automatic play on, Play skips the list; this is the way back to it.
+                if settings.autoPlayBest {
+                    Button {
+                        playback.chooseSource(for: target)
+                    } label: {
+                        Label("Sources", systemImage: "list.bullet.rectangle").font(.headline)
+                    }
+                    .buttonStyle(.glass)
                 }
-                .buttonStyle(.glass)
             } else if item.kind == .series {
                 ProgressView()
             }
@@ -204,7 +201,7 @@ struct DetailView: View {
                     EpisodeRow(episode: episode, progress: library.progress(for: PlaybackTarget(item: shown, episode: episode))) {
                         playback.play(PlaybackTarget(item: shown, episode: episode), settings: settings, library: library)
                     } chooseSource: {
-                        sourcesTarget = PlaybackTarget(item: shown, episode: episode)
+                        playback.chooseSource(for: PlaybackTarget(item: shown, episode: episode))
                     }
                 }
             }

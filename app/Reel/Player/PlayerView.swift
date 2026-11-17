@@ -8,6 +8,8 @@ struct VLCVideoSurface: UIViewRepresentable {
     func makeUIView(context: Context) -> SurfaceView {
         let view = SurfaceView()
         view.backgroundColor = .black
+        // VLC draws through its own layers and would swallow touches; taps go to SwiftUI instead.
+        view.isUserInteractionEnabled = false
         view.onLayout = { [weak player = controller] in Task { @MainActor in player?.applyScale() } }
         controller.attach(view)
         return view
@@ -29,6 +31,7 @@ struct PlayerView: View {
     let session: PlayerSession
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var playback: PlaybackCenter
     @Environment(\.dismiss) private var dismiss
     @StateObject private var controller = PlayerController()
     @State private var controlsVisible = true
@@ -40,12 +43,18 @@ struct PlayerView: View {
             Color.black.ignoresSafeArea()
             VLCVideoSurface(controller: controller)
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
+
+            // A transparent layer above the video owns the taps: one tap shows or hides the
+            // controls, two toggle fill. It sits under the controls, so their buttons still work.
+            Color.clear
                 .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .onTapGesture(count: 2) { controller.fillsScreen.toggle() }
                 .onTapGesture { toggleControls() }
-                .gesture(TapGesture(count: 2).onEnded { controller.fillsScreen.toggle() })
 
             if controller.isBuffering && controller.errorMessage == nil {
-                ProgressView().controlSize(.large).tint(.white)
+                ProgressView().controlSize(.large).tint(.white).allowsHitTesting(false)
             }
 
             if controlsVisible || controller.errorMessage != nil {
@@ -171,6 +180,12 @@ struct PlayerView: View {
             .font(.caption.weight(.semibold))
 
             HStack(spacing: 12) {
+                Button {
+                    playback.switchSource(for: session.target)
+                } label: {
+                    Label("Sources", systemImage: "list.bullet.rectangle").font(.headline)
+                }
+                .buttonStyle(.glass)
                 Spacer()
                 trackMenu(title: "Audio", systemImage: "waveform", tracks: controller.audioTracks, current: controller.currentAudio, select: controller.selectAudio)
                 trackMenu(title: "Subtitles", systemImage: "captions.bubble", tracks: controller.subtitleTracks, current: controller.currentSubtitle, select: controller.selectSubtitle)
