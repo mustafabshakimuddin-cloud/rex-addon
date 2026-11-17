@@ -1,5 +1,10 @@
 # rex-addon
 
+- **[`app/`](app/README.md): Reel**, an iOS app (iPhone, iPad, iPhone Duo) for browsing films and
+  series and streaming them through Torrentio and your debrid service, with a VLC-based player.
+- **`rex.torrentio.js`**: a module for the Rex player (below). Rex 1.1 does not play streams from
+  imported modules, which is why the app exists.
+
 Modules for the [Rex](https://rexnow.tv) media player.
 
 ## Torrentio — `rex.torrentio.js`
