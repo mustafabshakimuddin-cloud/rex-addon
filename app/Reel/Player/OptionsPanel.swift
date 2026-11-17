@@ -1,12 +1,12 @@
 import SwiftUI
 import AetherEngine
 
-/// Audio, subtitles and speed in one glass panel: a side panel on wide windows, a bottom card on
+/// Audio, subtitles, speed and playback info in one glass panel: a side panel on wide windows, a bottom card on
 /// narrow ones. Built from plain buttons rather than SwiftUI Menu, which the engine's author warns
 /// rebuilds while open under a ticking playback clock.
 struct OptionsPanel: View {
     enum Tab: String, CaseIterable, Identifiable, Equatable {
-        case audio = "Audio", subtitles = "Subtitles", speed = "Speed"
+        case audio = "Audio", subtitles = "Subtitles", speed = "Speed", info = "Info"
         var id: String { rawValue }
     }
 
@@ -34,6 +34,8 @@ struct OptionsPanel: View {
                     case .audio: audioList
                     case .subtitles: subtitleList
                     case .speed: speedList
+                    case .info:
+                        if let engine = model.engine { PlaybackInfoView(engine: engine) }
                     }
                 }
             }
@@ -89,6 +91,9 @@ struct OptionsPanel: View {
         switch tab {
         case .audio:
             Text("Multichannel and Dolby Atmos tracks play in Spatial Audio with AirPods and other supported headphones. Changing track reopens the stream for a moment.")
+                .font(.caption2).foregroundStyle(.white.opacity(0.6))
+        case .info:
+            Text("Updates every second. HDR is easiest to judge in a bright scene, such as daylight or a lamp in shot.")
                 .font(.caption2).foregroundStyle(.white.opacity(0.6))
         case .subtitles, .speed:
             EmptyView()

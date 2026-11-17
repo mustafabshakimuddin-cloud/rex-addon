@@ -127,6 +127,11 @@ struct PlayerView: View {
                 infoChips
             }
             Spacer(minLength: 8)
+            Button { openPanel(.info) } label: {
+                Image(systemName: "info.circle").font(.headline).frame(width: 22, height: 22)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Playback info")
             if model.pip.isPossible {
                 Button { model.pip.toggle() } label: {
                     Image(systemName: "pip.enter").font(.headline).frame(width: 22, height: 22)
