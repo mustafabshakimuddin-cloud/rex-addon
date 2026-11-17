@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.1.0",
+  version: "1.1.1",
   requiredVersion: "0.0.2",
   description: "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
   author: "Community",
@@ -421,7 +421,25 @@ function normalizeTmdbId(value) {
 
 function isTvType(type) {
   const value = cleanParam(type).toLowerCase();
-  return value === "tv" || value === "series" || value === "show";
+  return value === "tv" || value === "series" || value === "show" || value === "episode";
+}
+
+// 写入 Rex「JS 日志」/ 模块调试的运行日志。密钥一律打码，日志可以直接复制分享。
+function torrentioLog(message, params) {
+  let text = String(message);
+  for (const secret of [cleanParam(params && params.debridKey), cleanParam(params && params.tmdbApiKey)]) {
+    if (secret.length >= 4) text = text.split(secret).join("***").split(encodeURIComponent(secret)).join("***");
+  }
+  console.log(`[Torrentio] ${text}`);
+}
+
+function describeParams(params) {
+  const shown = {};
+  for (const [key, value] of Object.entries(params || {})) {
+    if (key === "debridKey" || key === "tmdbApiKey") shown[key] = cleanParam(value) ? "(set)" : "(empty)";
+    else if (typeof value !== "function") shown[key] = value;
+  }
+  return JSON.stringify(shown);
 }
 
 async function imdbIdFromTmdb(tmdbId, isTv, apiKey) {
@@ -578,8 +596,11 @@ async function popular(params) {
 }
 
 async function loadResource(params) {
-  const isTv = isTvType(params.type);
+  torrentioLog(`loadResource params ${describeParams(params)}`, params);
+  const hasEpisode = cleanParam(params.season) !== "" && cleanParam(params.episode) !== "";
+  const isTv = isTvType(params.type) || (hasEpisode && cleanParam(params.type).toLowerCase() !== "movie");
   const imdbId = await resolveImdbId(params);
+  torrentioLog(`resolved imdbId=${imdbId || "none"} isTv=${isTv}`, params);
   if (!imdbId) {
     throw new Error("缺少 IMDb ID：Torrentio 只能按 IMDb ID 查询。可在设置中填写 TMDB API Key 以自动转换。");
   }
@@ -598,6 +619,7 @@ async function loadResource(params) {
   const configSegment = config ? `/${encodeURIComponent(config)}` : "";
   const url = `${torrentioServer(params)}${configSegment}/stream/${isTv ? "series" : "movie"}/${encodeURIComponent(videoId)}.json`;
 
+  torrentioLog(`GET ${url}`, params);
   const response = await Widget.http.get(url, { headers: torrentioHeaders() });
   const body = parseBody(response);
   const streams = body && Array.isArray(body.streams) ? body.streams : [];
@@ -605,6 +627,7 @@ async function loadResource(params) {
   const hasDebrid = Boolean(debridService(params));
   const showMagnets = cleanParam(params.showMagnets) === "true";
   const resources = toVideoResources(streams, showMagnets);
+  torrentioLog(`torrentio streams=${streams.length} playable=${resources.length} debrid=${hasDebrid ? debridService(params).service : "none"}`, params);
 
   if (resources.length === 0 && streams.length > 0 && !hasDebrid && !showMagnets) {
     throw new Error(`找到 ${streams.length} 个种子，但未配置网盘服务，无法直接播放。请在设置中填写网盘服务和 API Key，或开启「磁力链接」。`);
