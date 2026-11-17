@@ -72,3 +72,67 @@ jobs:
           name: Reel-unsigned-ipa
           path: app/Reel-unsigned.ipa
           retention-days: 30
+
+  # Launches the app in the iPhone Duo and iPhone 17 simulators and screenshots it, so a launch
+  # crash or broken layout shows up here rather than on someone's phone. Screenshots are uploaded
+  # and also printed (small JPEGs, base64) so they can be read from the log alone.
+  simulator:
+    name: Launch on simulators
+    runs-on: xcode-27
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_27*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcrun simctl list devices available | grep -E "iPhone (Duo|17 )" || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodegen generate
+          xcodebuild build -project Reel.xcodeproj -scheme Reel -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -configuration Debug -derivedDataPath build \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee sim.log | grep -E "error:|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
+
+      - name: Launch and screenshot
+        run: |
+          APP=build/Build/Products/Debug-iphonesimulator/Reel.app
+          mkdir -p shots
+          for NAME in "iPhone Duo" "iPhone 17"; do
+            UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys; d=json.load(sys.stdin)['devices']
+          c=[(r,x['udid']) for r,l in d.items() for x in l if x['name']=='$NAME']
+          print(sorted(c)[-1][1] if c else '')")
+            if [ -z "$UDID" ]; then echo "::warning::No $NAME simulator"; continue; fi
+            xcrun simctl boot "$UDID" || true
+            xcrun simctl bootstatus "$UDID" -b
+            xcrun simctl install "$UDID" "$APP"
+            xcrun simctl launch "$UDID" community.reel.app
+            sleep 25
+            SLUG=$(echo "$NAME" | tr ' ' '-')
+            if ! xcrun simctl spawn "$UDID" launchctl list | grep -q community.reel.app; then
+              echo "::error::$NAME: the app is not running 25 s after launch (crashed?)"
+              xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
+            fi
+            xcrun simctl io "$UDID" screenshot "shots/$SLUG.png"
+            sips -Z 640 -s format jpeg -s formatOptions 55 "shots/$SLUG.png" --out "shots/$SLUG-small.jpg" >/dev/null
+            echo "=== SCREENSHOT $SLUG BEGIN ==="; base64 -i "shots/$SLUG-small.jpg"; echo "=== SCREENSHOT $SLUG END ==="
+            xcrun simctl shutdown "$UDID" || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: simulator-screenshots
+          path: app/shots/
+          retention-days: 14
