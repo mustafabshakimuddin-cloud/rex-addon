@@ -58,6 +58,7 @@ struct HomeView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
+    @EnvironmentObject private var router: AppRouter
     @Environment(\.horizontalSizeClass) private var sizeClass
     @StateObject private var model = HomeModel()
     @State private var width: CGFloat = 390
@@ -112,6 +113,15 @@ struct HomeView: View {
         .background(Theme.Backdrop())
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
         .toolbar(.hidden, for: .navigationBar)
+        .overlay(alignment: .topTrailing) {
+            Button { router.showingSettings = true } label: {
+                Image(systemName: "gearshape.fill").font(.headline).frame(width: 22, height: 22)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Settings")
+            .padding(.trailing, 16)
+            .padding(.top, 4)
+        }
         .task { await model.load() }
         .refreshable { await model.reload() }
     }
@@ -137,7 +147,12 @@ struct HeroCarousel: View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(items) { item in
-                    slide(item, height: height).frame(width: width, height: height)
+                    // One page is exactly the scroll view's visible width, whatever insets the
+                    // system applies (the iPhone Duo's vertical rail, iPad sidebars).
+                    slide(item, height: height)
+                        .frame(height: height)
+                        .containerRelativeFrame(.horizontal)
+                        .clipped()
                         .id(item.id)
                 }
             }
@@ -178,7 +193,7 @@ struct HeroCarousel: View {
         let wide = width >= 600
         return ZStack(alignment: .bottomLeading) {
             RemoteImage(url: wide ? (item.background ?? item.poster) : (item.poster ?? item.background))
-                .frame(width: width, height: height)
+                .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
                 .clipped()
             LinearGradient(stops: [
                 .init(color: .clear, location: 0.35),

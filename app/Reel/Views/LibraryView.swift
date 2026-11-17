@@ -4,6 +4,7 @@ struct LibraryView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
+    @EnvironmentObject private var router: AppRouter
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -50,6 +51,12 @@ struct LibraryView: View {
         }
         .background(Theme.Backdrop())
         .navigationTitle("Library")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { router.showingSettings = true } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings")
+            }
+        }
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
     }
 }

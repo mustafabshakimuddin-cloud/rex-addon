@@ -6,6 +6,7 @@ struct ReelApp: App {
     @StateObject private var settings = AppSettings()
     @StateObject private var library = Library()
     @StateObject private var playback = PlaybackCenter()
+    @StateObject private var router = AppRouter()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -19,6 +20,7 @@ struct ReelApp: App {
                 .environmentObject(settings)
                 .environmentObject(library)
                 .environmentObject(playback)
+                .environmentObject(router)
                 .preferredColorScheme(.dark)
                 .tint(Theme.accent)
         }

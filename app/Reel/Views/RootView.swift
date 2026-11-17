@@ -1,13 +1,20 @@
 import SwiftUI
 
 enum AppTab: Hashable {
-    case home, movies, series, library, settings, search
+    case home, movies, series, library, search
+}
+
+/// App-wide navigation requests that aren't owned by one screen.
+@MainActor
+final class AppRouter: ObservableObject {
+    @Published var showingSettings = false
 }
 
 struct RootView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var playback: PlaybackCenter
+    @EnvironmentObject private var router: AppRouter
     @State private var tab: AppTab = .home
 
     var body: some View {
@@ -26,9 +33,6 @@ struct RootView: View {
             Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.library) {
                 NavigationStack { LibraryView() }
             }
-            Tab("Settings", systemImage: "gearshape.fill", value: AppTab.settings) {
-                NavigationStack { SettingsView() }
-            }
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack { SearchView() }
             }
@@ -36,6 +40,17 @@ struct RootView: View {
         .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
         .overlay(alignment: .bottom) { preparingHUD }
+        // Five tabs fit an iPhone tab bar without a "More" tab; Settings is a gear and a sheet.
+        .sheet(isPresented: $router.showingSettings) {
+            NavigationStack {
+                SettingsView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { router.showingSettings = false }
+                        }
+                    }
+            }
+        }
         .fullScreenCover(item: $playback.session) { session in
             PlayerView(session: session)
         }
@@ -45,7 +60,7 @@ struct RootView: View {
             Text(playback.errorMessage ?? "")
         }
         .alert("Add a debrid service", isPresented: $playback.needsDebridSetup) {
-            Button("Open Settings") { tab = .settings }
+            Button("Open Settings") { router.showingSettings = true }
             Button("Not now", role: .cancel) {}
         } message: {
             Text("Streams play through a debrid service such as Real-Debrid. Add your service and API key in Settings.")
