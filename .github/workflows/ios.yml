@@ -58,11 +58,31 @@ jobs:
         if: failure()
         run: grep -E "error:" build.log | sort -u | head -80 || true
 
+      # VLCKit 3.6's framework still carries 32-bit (armv7/armv7s) slices and was built by Xcode 13,
+      # possibly with bitcode. Sideloading signers and current iOS reject such code, so ship arm64
+      # only, without bitcode, and check the result before packaging.
       - name: Package .ipa
         run: |
+          rm -rf Payload Reel-unsigned.ipa
           mkdir -p Payload
           cp -R build/Build/Products/Release-iphoneos/Reel.app Payload/
-          zip -qry Reel-unsigned.ipa Payload
+          for BIN in Payload/Reel.app/Frameworks/*.framework/*; do
+            [ -f "$BIN" ] && file "$BIN" | grep -q "Mach-O" || continue
+            if lipo -info "$BIN" | grep -qE "armv7|i386|x86_64"; then
+              lipo "$BIN" -thin arm64 -output "$BIN.thin" && mv "$BIN.thin" "$BIN"
+            fi
+            if xcrun --find bitcode_strip >/dev/null 2>&1; then xcrun bitcode_strip -r "$BIN" -o "$BIN.nobc" && mv "$BIN.nobc" "$BIN"; fi
+          done
+          find Payload -name "*.dSYM" -prune -exec rm -rf {} +
+          for BIN in Payload/Reel.app/Reel Payload/Reel.app/Frameworks/*.framework/*; do
+            [ -f "$BIN" ] && file "$BIN" | grep -q "Mach-O" && lipo -info "$BIN"
+          done
+          if lipo -info Payload/Reel.app/Frameworks/*.framework/MobileVLCKit | grep -q armv7; then
+            echo "::error::32-bit code is still in the framework"; exit 1
+          fi
+          # Plain zip (no symlink storage), Payload/ at the root, as installers expect.
+          zip -qr Reel-unsigned.ipa Payload
+          unzip -l Reel-unsigned.ipa | head -8
           ls -lh Reel-unsigned.ipa
 
       # Unsigned: install with AltStore or Sideloadly, which sign it with your Apple ID.
@@ -72,6 +92,34 @@ jobs:
           name: Reel-unsigned-ipa
           path: app/Reel-unsigned.ipa
           retention-days: 30
+
+  # Builds from main are also published to a rolling "latest" release, which gives the .ipa a
+  # permanent direct link that needs no GitHub sign-in and opens straight in AltStore/Sideloadly:
+  #   https://github.com/<owner>/rex-addon/releases/download/latest/Reel.ipa
+  release:
+    name: Publish to the "latest" release
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Reel-unsigned-ipa
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          mv Reel-unsigned.ipa Reel.ipa
+          NOTES="Unsigned build of ${GITHUB_SHA::7} ($(date -u +'%Y-%m-%d %H:%M UTC')). Install with AltStore or Sideloadly."
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest Reel.ipa --clobber
+            gh release edit latest --notes "$NOTES"
+          else
+            gh release create latest Reel.ipa --title "Reel (latest build)" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+          fi
 
   # Launches the app in the iPhone Duo and iPhone 17 simulators and screenshots it, so a launch
   # crash or broken layout shows up here rather than on someone's phone. Screenshots are uploaded
