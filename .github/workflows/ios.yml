@@ -58,9 +58,8 @@ jobs:
         if: failure()
         run: grep -E "error:" build.log | sort -u | head -80 || true
 
-      # VLCKit 3.6's framework still carries 32-bit (armv7/armv7s) slices and was built by Xcode 13,
-      # possibly with bitcode. Sideloading signers and current iOS reject such code, so ship arm64
-      # only, without bitcode, and check the result before packaging.
+      # Ship arm64 only, without bitcode: an embedded framework carrying 32-bit (armv7) or simulator
+      # slices is rejected by sideloading signers and current iOS (VLCKit 3.6 shipped exactly that).
       - name: Package .ipa
         run: |
           rm -rf Payload Reel-unsigned.ipa
@@ -77,9 +76,14 @@ jobs:
           for BIN in Payload/Reel.app/Reel Payload/Reel.app/Frameworks/*.framework/*; do
             [ -f "$BIN" ] && file "$BIN" | grep -q "Mach-O" && lipo -info "$BIN"
           done
-          if lipo -info Payload/Reel.app/Frameworks/*.framework/MobileVLCKit | grep -q armv7; then
-            echo "::error::32-bit code is still in the framework"; exit 1
-          fi
+          for FW in Payload/Reel.app/Frameworks/*.framework; do
+            BIN="$FW/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$FW/Info.plist" 2>/dev/null || basename "$FW" .framework)"
+            [ -f "$BIN" ] || continue
+            if lipo -info "$BIN" | grep -qE "armv7|i386|x86_64"; then
+              echo "::error::$(basename "$FW") still contains code for another architecture"; exit 1
+            fi
+          done
+          du -sh Payload/Reel.app/Frameworks/* | sort -h | tail -12
           # Plain zip (no symlink storage), Payload/ at the root, as installers expect.
           zip -qr Reel-unsigned.ipa Payload
           unzip -l Reel-unsigned.ipa | head -8

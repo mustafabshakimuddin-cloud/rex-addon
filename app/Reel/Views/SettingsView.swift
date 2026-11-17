@@ -61,16 +61,23 @@ struct SettingsView: View {
                 Text("With automatic play off, Play shows every source so you can pick the quality and size. “Instant” sources are already cached by your debrid service and start straight away.")
             }
 
-            Section("Player") {
+            Section {
+                Picker("Audio language", selection: $settings.preferredAudioLanguage) {
+                    ForEach(Languages.options, id: \.0) { Text($0.1).tag($0.0) }
+                }
                 Toggle("Turn on subtitles automatically", isOn: $settings.autoplaySubtitles)
                 Picker("Subtitle language", selection: $settings.preferredSubtitleLanguage) {
-                    ForEach(Self.languages, id: \.0) { Text($0.1).tag($0.0) }
+                    ForEach(Languages.options.filter { !$0.0.isEmpty }, id: \.0) { Text($0.1).tag($0.0) }
                 }
+            } header: {
+                Text("Player")
+            } footer: {
+                Text("The audio language is chosen as the stream opens, so the right track starts straight away. Multichannel and Dolby Atmos tracks play in Spatial Audio on supported headphones.")
             }
 
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
-                Text("Catalogue by Cinemeta. Sources by Torrentio. Playback by VLCKit (LGPL 2.1). \(AppConfig.name) hosts no content.")
+                Text("Catalogue by Cinemeta. Sources by Torrentio. Playback by AetherEngine (LGPL 3 with an App Store exception) and FFmpeg (LGPL). \(AppConfig.name) hosts no content.")
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
             }
@@ -117,12 +124,6 @@ struct SettingsView: View {
     static func qualityLabel(_ key: String) -> String {
         ["4k": "4K", "scr": "Screener", "cam": "Cam", "unknown": "Unknown", "dolbyvision": "Dolby Vision", "hdrall": "HDR", "threed": "3D"][key] ?? key
     }
-
-    static let languages: [(String, String)] = [
-        ("eng", "English"), ("spa", "Spanish"), ("fre", "French"), ("ger", "German"), ("ita", "Italian"),
-        ("por", "Portuguese"), ("ara", "Arabic"), ("hin", "Hindi"), ("urd", "Urdu"), ("tur", "Turkish"),
-        ("rus", "Russian"), ("jpn", "Japanese"), ("kor", "Korean"), ("chi", "Chinese"),
-    ]
 }
 
 struct MultiSelectList: View {
