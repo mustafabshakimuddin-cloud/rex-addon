@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.3.0",
+  version: "1.4.0",
   // 详情页（loadDetail）缓存时长，秒。
   detailCacheDuration: 3600,
   requiredVersion: "0.0.2",
@@ -607,6 +607,62 @@ function cinemetaItem(meta, mediaType) {
   return { id: link, type: "url", link, ...cinemetaCommon(meta, mediaType) };
 }
 
+// ---- 播放测试条目（临时）----
+// 两个公开样片，用来判断 Rex 是否播放模块给出的 videoUrl，以及认列表项还是详情页上的。
+const SAMPLE_VIDEO = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4";
+const TEST_ITEMS = {
+  "torrentio:test:list": "Rex playback test A (video on list item)",
+  "torrentio:test:detail": "Rex playback test B (video on detail page)",
+};
+
+function testItem(link, withVideo) {
+  const item = {
+    id: link,
+    type: "url",
+    link,
+    title: TEST_ITEMS[link],
+    description: "Plays Sintel, a public sample film, to check how Rex plays a module's video address.",
+    mediaType: "movie",
+    backdropPath: "https://images.metahub.space/background/medium/tt1727587/img",
+    posterPath: "https://images.metahub.space/poster/medium/tt1727587/img",
+  };
+  if (withVideo) item.videoUrl = SAMPLE_VIDEO;
+  return item;
+}
+
+function headerValue(headers, name) {
+  if (!headers || typeof headers !== "object") return "";
+  const key = Object.keys(headers).find((item) => item.toLowerCase() === name);
+  return key ? String(headers[key]) : "";
+}
+
+// Torrentio 的 /resolve/ 链接要先让网盘准备文件再 302 跳转，Rex 起播前可能不接受这种地址。
+// 在模块里跟一次跳转，交给 Rex 网盘的直链；Torrentio 的错误提示视频（/videos/xxx.mp4）转成文字。
+async function resolveDirectUrl(url) {
+  const timeout = new Promise((resolve) => setTimeout(() => resolve({ note: "resolve timed out after 25s" }), 25000));
+  const attempt = (async () => {
+    let response;
+    try {
+      response = await Widget.http.get(url, { headers: torrentioHeaders(), allow_redirects: false });
+    } catch (error) {
+      return { note: `resolve failed: ${String(error && error.message || error).slice(0, 80)}` };
+    }
+    const status = Number(response && response.statusCode);
+    const location = headerValue(response && response.headers, "location");
+    if (!location) return { note: `resolve gave HTTP ${status || "?"} without a redirect` };
+    const failure = location.match(/torrentio[^/]*\/videos\/([a-z_]+?)(?:_v\d+)?\.mp4/i);
+    if (failure) return { note: `Torrentio says: ${failure[1].replace(/_/g, " ")}` };
+    let host = "";
+    try {
+      host = new URL(location).host;
+    } catch (error) {
+      host = "?";
+    }
+    return { direct: location, note: `direct link from ${host}` };
+  })();
+  return Promise.race([attempt, timeout]);
+}
+
 async function popular(params) {
   recordCall("list", params);
   rememberSettings(params);
@@ -623,7 +679,11 @@ async function popular(params) {
   const response = await Widget.http.get(`${CINEMETA_BASE}/${catalog}/catalog/${path}`, { headers: torrentioHeaders() });
   const body = parseBody(response);
   const metas = body && Array.isArray(body.metas) ? body.metas : [];
-  return metas.map((meta) => cinemetaItem(meta, mediaType)).filter(Boolean);
+  const items = metas.map((meta) => cinemetaItem(meta, mediaType)).filter(Boolean);
+  if (page === 1 && !genre) {
+    items.unshift(testItem("torrentio:test:list", true), testItem("torrentio:test:detail", false));
+  }
+  return items;
 }
 
 // 详情页：顶层函数，不写进 modules。剧集返回 episodeItems，每集带自己的 link。
@@ -638,6 +698,11 @@ async function loadDetail(input, ...rest) {
   const settingsKnown = Boolean(loadRememberedSettings());
   const argShape = [input, ...rest].map((arg) => (arg && typeof arg === "object" ? `{${Object.keys(arg).join(",")}}` : typeof arg)).join(", ");
   torrentioLog(`loadDetail link=${cleanParam(link)} args=${1 + rest.length} settingsKnown=${settingsKnown}`, settings);
+  if (TEST_ITEMS[cleanParam(link)]) {
+    const item = testItem(cleanParam(link), true);
+    item.description = `[test · loadDetail called · videoUrl set to the sample]\n\n${item.description}`;
+    return item;
+  }
   if (!parsed) throw new Error("无效的 Torrentio 链接");
 
   const mediaType = parsed.kind === "series" ? "tv" : "movie";
@@ -678,8 +743,15 @@ async function loadDetail(input, ...rest) {
       // 直接给出播放地址：即使 Rex 不调用 loadResource，详情页也有可播放的资源。
       const best = result.resources[0];
       if (best) {
-        detail.videoUrl = best.url;
-        if (best.customHeaders) detail.customHeaders = best.customHeaders;
+        const resolved = /\/resolve\//.test(best.url) ? await resolveDirectUrl(best.url) : { direct: best.url, note: "direct link" };
+        status.push(resolved.note);
+        // 解析超时时仍交出 Torrentio 自己的链接；明确失败（如网盘拒绝）则不给。
+        const playUrl = resolved.direct || (/timed out/.test(resolved.note) ? best.url : "");
+        if (playUrl) {
+          detail.videoUrl = playUrl;
+          if (best.customHeaders) detail.customHeaders = best.customHeaders;
+        }
+        status.push(`playing: ${best.name}`);
       }
     } catch (error) {
       status.push(`error: ${String(error && error.message || error).slice(0, 160)}`);

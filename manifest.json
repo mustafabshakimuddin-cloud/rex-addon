@@ -6,7 +6,7 @@
     {
       "id": "community.torrentio",
       "title": "Torrentio",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "requiredVersion": "0.0.2",
       "description": "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
       "author": "Community",
@@ -23,7 +23,7 @@
     {
       "id": "community.torrentio.streams",
       "title": "Torrentio Streams",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "requiredVersion": "0.0.2",
       "description": "Torrentio 播放资源，设置在 Torrentio 模块中填写",
       "author": "Community",
