@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.4.0",
+  version: "1.4.1",
   // 详情页（loadDetail）缓存时长，秒。
   detailCacheDuration: 3600,
   requiredVersion: "0.0.2",
@@ -609,7 +609,8 @@ function cinemetaItem(meta, mediaType) {
 
 // ---- 播放测试条目（临时）----
 // 两个公开样片，用来判断 Rex 是否播放模块给出的 videoUrl，以及认列表项还是详情页上的。
-const SAMPLE_VIDEO = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4";
+// Blender 基金会官网的《Sintel》预告片：公开、HTTPS、无跳转、支持分段请求。
+const SAMPLE_VIDEO = "https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4";
 const TEST_ITEMS = {
   "torrentio:test:list": "Rex playback test A (video on list item)",
   "torrentio:test:detail": "Rex playback test B (video on detail page)",
@@ -621,7 +622,7 @@ function testItem(link, withVideo) {
     type: "url",
     link,
     title: TEST_ITEMS[link],
-    description: "Plays Sintel, a public sample film, to check how Rex plays a module's video address.",
+    description: "Plays the trailer of Sintel, a public Blender film, to check how Rex plays a module's video address.",
     mediaType: "movie",
     backdropPath: "https://images.metahub.space/background/medium/tt1727587/img",
     posterPath: "https://images.metahub.space/poster/medium/tt1727587/img",
