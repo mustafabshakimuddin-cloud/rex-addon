@@ -18,7 +18,7 @@
 WidgetMetadata = {
   id: "community.torrentio",
   title: "Torrentio",
-  version: "1.4.1",
+  version: "1.5.0",
   // 详情页（loadDetail）缓存时长，秒。
   detailCacheDuration: 3600,
   requiredVersion: "0.0.2",
@@ -57,6 +57,7 @@ WidgetMetadata = {
       "体积上限": "Max Size",
       "最少做种数": "Minimum Seeders",
       "TMDB API Key（可选）": "TMDB API Key (optional)",
+      "打开时加入网盘": "Add to Debrid When Opened",
       "加载资源": "Load Streams",
       "热门影视": "Popular",
       "来自 Cinemeta 的热门电影与剧集": "Popular movies and series from Cinemeta",
@@ -100,6 +101,7 @@ WidgetMetadata = {
       "体积上限": "體積上限",
       "最少做种数": "最少做種數",
       "TMDB API Key（可选）": "TMDB API Key（選填）",
+      "打开时加入网盘": "開啟時加入網盤",
       "加载资源": "載入資源",
       "热门影视": "熱門影視",
       "来自 Cinemeta 的热门电影与剧集": "來自 Cinemeta 的熱門電影與劇集",
@@ -247,6 +249,16 @@ WidgetMetadata = {
       ],
     },
     {
+      name: "addToDebrid",
+      title: "打开时加入网盘",
+      type: "enumeration",
+      value: "false",
+      enumOptions: [
+        { title: "否", value: "false" },
+        { title: "是", value: "true" },
+      ],
+    },
+    {
       name: "tmdbApiKey",
       title: "TMDB API Key（可选）",
       type: "input",
@@ -348,6 +360,10 @@ const TORRENTIO_DEBRID_SERVICES = {
   putio: "Putio",
 };
 const TORRENTIO_SORTS = ["quality", "qualitysize", "seeders", "size"];
+const DEBRID_NAMES = {
+  realdebrid: "Real-Debrid", alldebrid: "AllDebrid", premiumize: "Premiumize", torbox: "TorBox",
+  debridlink: "Debrid-Link", easydebrid: "EasyDebrid", offcloud: "Offcloud", putio: "Put.io",
+};
 
 function torrentioHeaders() {
   return {
@@ -607,30 +623,6 @@ function cinemetaItem(meta, mediaType) {
   return { id: link, type: "url", link, ...cinemetaCommon(meta, mediaType) };
 }
 
-// ---- 播放测试条目（临时）----
-// 两个公开样片，用来判断 Rex 是否播放模块给出的 videoUrl，以及认列表项还是详情页上的。
-// Blender 基金会官网的《Sintel》预告片：公开、HTTPS、无跳转、支持分段请求。
-const SAMPLE_VIDEO = "https://download.blender.org/durian/trailer/sintel_trailer-480p.mp4";
-const TEST_ITEMS = {
-  "torrentio:test:list": "Rex playback test A (video on list item)",
-  "torrentio:test:detail": "Rex playback test B (video on detail page)",
-};
-
-function testItem(link, withVideo) {
-  const item = {
-    id: link,
-    type: "url",
-    link,
-    title: TEST_ITEMS[link],
-    description: "Plays the trailer of Sintel, a public Blender film, to check how Rex plays a module's video address.",
-    mediaType: "movie",
-    backdropPath: "https://images.metahub.space/background/medium/tt1727587/img",
-    posterPath: "https://images.metahub.space/poster/medium/tt1727587/img",
-  };
-  if (withVideo) item.videoUrl = SAMPLE_VIDEO;
-  return item;
-}
-
 function headerValue(headers, name) {
   if (!headers || typeof headers !== "object") return "";
   const key = Object.keys(headers).find((item) => item.toLowerCase() === name);
@@ -665,7 +657,7 @@ async function resolveDirectUrl(url) {
 }
 
 async function popular(params) {
-  recordCall("list", params);
+  clearSharedCopies();
   rememberSettings(params);
   const mediaType = isTvType(params.mediaType) ? "tv" : "movie";
   const catalog = cleanParam(params.catalog) === "imdbRating" ? "imdbRating" : "top";
@@ -680,11 +672,7 @@ async function popular(params) {
   const response = await Widget.http.get(`${CINEMETA_BASE}/${catalog}/catalog/${path}`, { headers: torrentioHeaders() });
   const body = parseBody(response);
   const metas = body && Array.isArray(body.metas) ? body.metas : [];
-  const items = metas.map((meta) => cinemetaItem(meta, mediaType)).filter(Boolean);
-  if (page === 1 && !genre) {
-    items.unshift(testItem("torrentio:test:list", true), testItem("torrentio:test:detail", false));
-  }
-  return items;
+  return metas.map((meta) => cinemetaItem(meta, mediaType)).filter(Boolean);
 }
 
 // 详情页：顶层函数，不写进 modules。剧集返回 episodeItems，每集带自己的 link。
@@ -696,14 +684,7 @@ async function loadDetail(input, ...rest) {
     if (extra && typeof extra === "object") rememberSettings(extra);
   }
   const settings = withSettings({});
-  const settingsKnown = Boolean(loadRememberedSettings());
-  const argShape = [input, ...rest].map((arg) => (arg && typeof arg === "object" ? `{${Object.keys(arg).join(",")}}` : typeof arg)).join(", ");
-  torrentioLog(`loadDetail link=${cleanParam(link)} args=${1 + rest.length} settingsKnown=${settingsKnown}`, settings);
-  if (TEST_ITEMS[cleanParam(link)]) {
-    const item = testItem(cleanParam(link), true);
-    item.description = `[test · loadDetail called · videoUrl set to the sample]\n\n${item.description}`;
-    return item;
-  }
+  torrentioLog(`loadDetail link=${cleanParam(link)} args=${1 + rest.length}`, settings);
   if (!parsed) throw new Error("无效的 Torrentio 链接");
 
   const mediaType = parsed.kind === "series" ? "tv" : "movie";
@@ -723,43 +704,37 @@ async function loadDetail(input, ...rest) {
   };
   if (meta.runtime) detail.durationText = cleanParam(meta.runtime);
 
-  // 诊断状态行（临时）：放在简介最前面，用户在详情页就能看到。
-  const status = [`Torrentio ${WidgetMetadata.version}`];
-  if (settingsKnown) {
-    const minutes = Math.max(0, Math.round((Date.now() - (loadRememberedSettings().savedAt || Date.now())) / 60000));
-    status.push(`settings: ${debridService(settings) ? debridService(settings).service : "no debrid key"} (saved ${minutes} min ago)`);
-  } else {
-    status.push("settings: not received yet");
-  }
-  status.push(lastCallText("list"));
-  status.push(`detail args: ${argShape}`);
-  status.push(`storage: ${typeof Widget !== "undefined" && Widget.storage ? "yes" : "no"}`);
-  status.push(`shared: ${typeof Widget !== "undefined" && Widget.sharedCache ? "yes" : "no"}`);
-  const playable = mediaType === "movie" || parsed.episode !== null;
-  if (playable) {
+  // 状态行：放在简介最前面。打开「加入网盘」后，打开详情页会把最佳的已缓存种子加入网盘，
+  // 网盘的 WebDAV 挂进 Rex 资源库后就能在 Rex 自己的详情页播放（Rex 1.1 不播放导入模块的视频）。
+  const status = [];
+  const debrid = debridService(settings);
+  if (!loadRememberedSettings()) status.push("open Torrentio's Popular list once so this page gets your settings");
+  const firstEpisode = (Array.isArray(meta.videos) ? meta.videos : [])
+    .map((video) => ({ season: Number(video.season), episode: Number(video.episode || video.number) }))
+    .filter(({ season, episode }) => season >= 1 && episode >= 1)
+    .sort((a, b) => (a.season - b.season) || (a.episode - b.episode))[0];
+  const target = mediaType === "movie" ? { isTv: false }
+    : parsed.episode !== null ? { isTv: true, season: parsed.season, episode: parsed.episode }
+    : firstEpisode ? { isTv: true, ...firstEpisode } : null;
+  if (target) {
     try {
-      const target = { isTv: mediaType === "tv", season: parsed.season, episode: parsed.episode };
       const result = await fetchTorrentioResources(settings, parsed.imdbId, target);
-      status.push(`${result.resources.length} sources found`);
-      // 直接给出播放地址：即使 Rex 不调用 loadResource，详情页也有可播放的资源。
+      status.push(`${result.resources.length} sources`);
       const best = result.resources[0];
-      if (best) {
-        const resolved = /\/resolve\//.test(best.url) ? await resolveDirectUrl(best.url) : { direct: best.url, note: "direct link" };
-        status.push(resolved.note);
-        // 解析超时时仍交出 Torrentio 自己的链接；明确失败（如网盘拒绝）则不给。
-        const playUrl = resolved.direct || (/timed out/.test(resolved.note) ? best.url : "");
-        if (playUrl) {
-          detail.videoUrl = playUrl;
-          if (best.customHeaders) detail.customHeaders = best.customHeaders;
-        }
-        status.push(`playing: ${best.name}`);
+      const label = debrid ? DEBRID_NAMES[debrid.service] : "";
+      if (best && debrid && cleanParam(settings.addToDebrid) === "true" && /\/resolve\//.test(best.url)) {
+        const resolved = await resolveDirectUrl(best.url);
+        const torrent = cleanParam(best.description).split("\n")[0].slice(0, 90);
+        status.push(resolved.direct ? `added to ${label}: ${torrent}` : `not added to ${label} (${resolved.note})`);
+        if (resolved.direct) detail.videoUrl = resolved.direct;
+      } else if (best && debrid) {
+        status.push(`"Add to ${label}" is off in settings`);
       }
     } catch (error) {
-      status.push(`error: ${String(error && error.message || error).slice(0, 160)}`);
+      status.push(String(error && error.message || error).slice(0, 160));
     }
   }
-  status.push(lastLoadResourceText());
-  const statusText = status.join(" · ");
+  const statusText = `Torrentio · ${status.join(" · ")}`;
 
   if (parsed.episode !== null) {
     const video = (Array.isArray(meta.videos) ? meta.videos : []).find((item) =>
@@ -776,7 +751,7 @@ async function loadDetail(input, ...rest) {
     }
   }
   detail.description = `[${statusText}]\n\n${detail.description || ""}`.trim();
-  if (playable) return detail;
+  if (mediaType === "movie" || parsed.episode !== null) return detail;
 
   const episodes = (Array.isArray(meta.videos) ? meta.videos : [])
     .map((video) => ({ video, season: Number(video.season), episode: Number(video.episode || video.number) }))
@@ -806,12 +781,12 @@ async function loadDetail(input, ...rest) {
 // loadDetail(link) 拿不到全局设置（网盘 Key 等），且与列表不在同一个 JS 引擎里，内存不共享。
 // 因此把最近一次调用里出现的设置写入本模块自己的 Widget.storage（仅本机、仅本模块），
 // 详情页从那里读取。诊断信息只记录参数名，不记录任何值。
-// 固定列表而不是读 WidgetMetadata.globalParams：同一份代码也用于没有设置项的「Torrentio Streams」模块。
+// 会被记住、供详情页使用的设置项。
 const SETTING_NAMES = [
   "server", "debridService", "debridKey", "cachedOnly", "showMagnets", "providers", "qualityFilter",
-  "sort", "limit", "language", "sizeFilter", "minSeeders", "tmdbApiKey",
+  "sort", "limit", "language", "sizeFilter", "minSeeders", "tmdbApiKey", "addToDebrid",
 ];
-// 两个模块之间共享设置与诊断用的命名空间（Widget.sharedCache 跨模块可读）。
+// 1.3.x 用过的共享缓存命名空间，仅用于清理。
 const SHARED_NAMESPACE = "community.torrentio";
 let rememberedSettings = null;
 
@@ -823,24 +798,20 @@ function rememberSettings(params) {
     if (params[name] !== undefined) rememberedSettings[name] = params[name];
   }
   storageSet("torrentio.settings", JSON.stringify(rememberedSettings));
-  sharedSet("settings", JSON.stringify(rememberedSettings));
 }
 
-function sharedGet(key) {
+// 1.3.x 曾把设置（含网盘 Key）写进跨模块可读的共享缓存；现在不再需要，清掉。
+function clearSharedCopies() {
   try {
-    return typeof Widget !== "undefined" && Widget.sharedCache ? Widget.sharedCache.get(SHARED_NAMESPACE, key) : null;
+    if (typeof Widget !== "undefined" && Widget.sharedCache) {
+      for (const key of ["settings", "lastLoadResource"]) Widget.sharedCache.remove(SHARED_NAMESPACE, key);
+    }
   } catch (error) {
-    return null;
+    // 清不掉也不影响使用。
   }
 }
 
-function sharedSet(key, value) {
-  try {
-    if (typeof Widget !== "undefined" && Widget.sharedCache) Widget.sharedCache.set(SHARED_NAMESPACE, key, value);
-  } catch (error) {
-    // 共享缓存不可用时，各模块仍可用自己的 storage。
-  }
-}
+
 
 function parseJSON(value) {
   try {
@@ -854,30 +825,11 @@ function loadRememberedSettings() {
   if (rememberedSettings) return rememberedSettings;
   // 本模块自己存过的优先；没有时读另一个模块经共享缓存写入的设置。
   const own = parseJSON(storageGet("torrentio.settings"));
-  const shared = parseJSON(sharedGet("settings"));
-  const candidates = [own, shared].filter((item) => item && typeof item === "object");
-  candidates.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
-  rememberedSettings = candidates[0] || null;
+  rememberedSettings = own && typeof own === "object" ? own : null;
   return rememberedSettings;
 }
 
-// 只记参数名：用来判断 Rex 有没有把全局设置传给列表函数。
-function recordCall(name, params) {
-  const keys = params && typeof params === "object" ? Object.keys(params).sort() : [typeof params];
-  storageSet(`torrentio.call.${name}`, JSON.stringify({ at: Date.now(), keys }));
-}
 
-function lastCallText(name) {
-  let last = null;
-  try {
-    last = JSON.parse(storageGet(`torrentio.call.${name}`) || "null");
-  } catch (error) {
-    last = null;
-  }
-  if (!last || !last.at) return `${name}: never called`;
-  const minutes = Math.max(0, Math.round((Date.now() - last.at) / 60000));
-  return `${name} ${minutes} min ago got [${last.keys.join(", ")}]`;
-}
 
 function withSettings(params) {
   const merged = { ...(loadRememberedSettings() || {}) };
@@ -905,21 +857,9 @@ function storageSet(key, value) {
 }
 
 function recordLoadResource(summary) {
-  const record = JSON.stringify({ at: Date.now(), by: WidgetMetadata.title, ...summary });
-  storageSet("torrentio.lastLoadResource", record);
-  sharedSet("lastLoadResource", record);
+  storageSet("torrentio.lastLoadResource", JSON.stringify({ at: Date.now(), ...summary }));
 }
 
-function lastLoadResourceText() {
-  const records = [parseJSON(storageGet("torrentio.lastLoadResource")), parseJSON(sharedGet("lastLoadResource"))]
-    .filter((item) => item && item.at)
-    .sort((a, b) => b.at - a.at);
-  const last = records[0];
-  if (!last) return "Rex has never called loadResource";
-  const minutes = Math.max(0, Math.round((Date.now() - last.at) / 60000));
-  const outcome = last.error ? `error: ${last.error}` : `${last.count} sources`;
-  return `Rex last called loadResource ${minutes} min ago on ${last.by || "?"} for ${last.target || "?"} (${outcome})`;
-}
 
 function torrentioTarget(params, linked) {
   const hasEpisode = cleanParam(params.season) !== "" && cleanParam(params.episode) !== "";
@@ -963,7 +903,6 @@ async function fetchTorrentioResources(params, imdbId, target) {
 }
 
 async function loadResource(rawParams) {
-  recordCall("loadResource", rawParams);
   rememberSettings(rawParams);
   const params = withSettings(rawParams);
   torrentioLog(`loadResource params ${describeParams(rawParams)}`, params);

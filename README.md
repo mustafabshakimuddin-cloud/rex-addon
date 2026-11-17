@@ -4,52 +4,36 @@ Modules for the [Rex](https://rexnow.tv) media player.
 
 ## Torrentio — `rex.torrentio.js`
 
-Lists torrent streams from [Torrentio](https://torrentio.strem.fun) when you start playing a
-movie or episode, and plays them through a debrid service (Real-Debrid, AllDebrid, Premiumize,
-TorBox, Debrid-Link, EasyDebrid, Offcloud, Put.io).
+Browse popular movies and series (from [Cinemeta](https://v3-cinemeta.strem.io), Stremio's
+catalogue), see how many [Torrentio](https://torrentio.strem.fun) sources each title has, and send
+the best cached torrent to your debrid account (Real-Debrid, AllDebrid, Premiumize, TorBox,
+Debrid-Link, EasyDebrid, Offcloud, Put.io).
 
-It also provides a **Popular** list (movies or series, popular or top rated, by genre) from
-Cinemeta, Stremio's catalogue. **Play titles from that list.** Rex asks a module for playback
-sources only for titles that belong to the module: an item carrying a `link`, whose details Rex
-loads through the module's `loadDetail(link)` before calling `loadResource`. A title opened from
-Rex's own TMDB pages is not tied to the module, so Rex shows "No resources available" there.
-The list is also what makes the module visible at all: Rex leaves an imported module out of its
-module list when it only provides playback sources.
+### Why it works this way
 
-### Two widgets, one source file
+Rex 1.1 on iPhone does not play anything an **imported** module provides. Tested on a device:
 
-The collection holds two widgets built from the same code:
+- a `type: "stream"` / `loadResource` module is dropped from the module and never called, whether
+  it sits beside a list or in a widget of its own (a stream-only widget is hidden entirely);
+- a `videoUrl` is ignored, on a list item and on a `loadDetail` page alike, even for a public
+  sample `.mp4`.
 
-- **Torrentio** (`rex.torrentio.js`): the settings, the Popular list and its detail pages.
-- **Torrentio Streams** (`torrentio-streams.js`): only the `loadResource` stream module. Rex 1.1
-  drops a stream module from a widget that also has a list, so it is published on its own as well.
-  It has no settings: it reads the ones Torrentio saves to `Widget.sharedCache` (namespace
-  `community.torrentio`) whenever its list is opened. Rex's shared cache can be read by any module
-  that knows the namespace, which includes the debrid key; install only modules you trust.
+Rex's own film pages do play files from its **libraries**, and Rex can add a WebDAV drive as one.
+Debrid services expose your account's files over WebDAV, so the working setup is:
 
-Edit only `rex.torrentio.js`, bump its `version`, then run `node tools/build.js`, which regenerates
-`torrentio-streams.js` and `manifest.json` with matching versions.
+1. **Add your debrid service's WebDAV as a Rex library** (Library → add → Network Drive →
+   WebDAV). For Real-Debrid the server is `dav.real-debrid.com`, the user is your Real-Debrid
+   username, and the password is the separate **WebDAV password** shown on your Real-Debrid
+   account page, not your login password. Choose the torrents folder to scan; Rex organizes the
+   files into movies and shows.
+2. **Turn on "Add to Debrid When Opened"** in this module's settings. Opening a title from the
+   Popular list then sends its best cached torrent to your debrid account (for a series, the
+   source for season 1, episode 1, often a season pack). The first line of the description says
+   what happened.
+3. **Refresh the library in Rex.** The title appears on Rex's normal page with a playable source.
 
-### Install
-
-Add this repository as a **module collection** in Rex (Settings → Modules → Add via Link):
-
-```
-https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/manifest.json
-```
-
-It appears on the Modules screen as its own collection, beside "Rex official modules", and
-Rex offers updates when the version in `manifest.json` goes up. To install the module on its
-own instead, use the module link:
-
-```
-https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/rex.torrentio.js
-```
-
-Then open the module's settings, choose your debrid service and paste its API key.
-
-When you change `rex.torrentio.js`, bump `version` and run `node tools/build.js`, or Rex will
-not see the update.
+The `loadResource` stream module is kept so the module starts working by itself if Rex enables
+resource modules for imported modules.
 
 ### Settings
 
@@ -67,6 +51,7 @@ not see the update.
 | Max Size | `sizefilter=` | e.g. `10GB`. |
 | Minimum Seeders | `minseeders=` | |
 | TMDB API Key | — | Only used when Rex supplies a TMDB ID but no IMDb ID. |
+| Add to Debrid When Opened | — | Off by default. When on, opening a title's page sends its best cached torrent to your debrid account. |
 
 ### Things to know
 
@@ -76,5 +61,7 @@ not see the update.
 - **Torrentio looks titles up by IMDb ID.** If Rex passes only a TMDB ID, the module converts
   it through Rex's built-in TMDB access (`Widget.tmdb`), and only needs the optional TMDB API
   key if that is unavailable.
-- **Your debrid key is part of every playback link** (`/resolve/<service>/<key>/…`), exactly as
-  in Stremio. It is stored in Rex's settings on your device, never in this repository.
+- **Your debrid key is part of every Torrentio link** (`/resolve/<service>/<key>/…`), exactly as
+  in Stremio. It is stored in Rex's settings and in the module's own storage on your device
+  (detail pages run separately from the list and cannot see the settings otherwise), never in
+  this repository.
