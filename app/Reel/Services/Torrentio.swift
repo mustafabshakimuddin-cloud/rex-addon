@@ -239,7 +239,8 @@ private struct RawStream: Decodable {
         let parts = size.replacingOccurrences(of: ",", with: ".").split(separator: " ")
         guard let number = parts.first.flatMap({ Double($0) }) else { return 0 }
         let unit = parts.count > 1 ? String(parts[1]) : "B"
-        let power = ["B": 0.0, "KB": 1, "MB": 2, "GB": 3, "TB": 4][unit] ?? 0
+        let powers: [String: Double] = ["B": 0, "KB": 1, "MB": 2, "GB": 3, "TB": 4]
+        let power = powers[unit] ?? 0
         return number * pow(1024, power)
     }
 }

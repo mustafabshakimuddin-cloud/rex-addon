@@ -104,7 +104,7 @@ final class PlayerController: ObservableObject {
         isPlaying = player.isPlaying
         isBuffering = state == .opening || state == .buffering && !player.isPlaying
         if let length = player.media?.length.intValue, length > 0 { duration = Double(length) / 1000 }
-        if let time = player.time?.intValue { position = max(0, Double(time) / 1000) }
+        position = max(0, Double(player.time.intValue) / 1000)
 
         switch state {
         case .error:
