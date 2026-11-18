@@ -147,6 +147,19 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Print iPhone Duo API signatures
+        continue-on-error: true
+        run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK: $SDK ($(xcrun --sdk iphoneos --show-sdk-version))"
+          for F in $(find "$SDK/System/Library/Frameworks/SwiftUI.framework" "$SDK/System/Library/Frameworks/SwiftUICore.framework" -name "arm64e-apple-ios.swiftinterface" 2>/dev/null); do
+            echo "== $F"
+            grep -nE "reservedRegions|ReservedRegion|onHingeChange|DeviceHinge|backgroundExtensionEffect|toolbarVerticalBehavior|ArrangementView|arrangementViewStyle|toolbarVerticalEdge" "$F" | grep -vE "^\s*//" | head -80 || true
+          done
+          echo "== ReservedRegion type"
+          grep -rhn -A25 "public struct ReservedRegion\b\|public struct ReservedRegion " "$SDK/System/Library/Frameworks/SwiftUI.framework" "$SDK/System/Library/Frameworks/SwiftUICore.framework" 2>/dev/null | head -80 || true
+          grep -rhn -B2 -A12 "func reservedRegions" "$SDK/System/Library/Frameworks/SwiftUI.framework" "$SDK/System/Library/Frameworks/SwiftUICore.framework" 2>/dev/null | head -80 || true
+
       - name: Build for simulator
         run: |
           set -o pipefail
