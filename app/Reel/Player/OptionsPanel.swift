@@ -13,6 +13,8 @@ struct OptionsPanel: View {
     @ObservedObject var model: PlayerModel
     @State var tab: Tab
     let wide: Bool
+    /// Looks for subtitles on OpenSubtitles for what is playing.
+    var searchOnline: () -> Void = {}
     let close: () -> Void
 
     var body: some View {
@@ -64,6 +66,7 @@ struct OptionsPanel: View {
     }
 
     @ViewBuilder private var subtitleList: some View {
+        if model.activeSubtitle != nil { timing }
         row(selected: model.activeSubtitle == nil, title: "Off", detail: nil, tags: []) {
             model.selectSubtitle(nil)
         }
@@ -73,6 +76,62 @@ struct OptionsPanel: View {
                 detail: TrackLabel.subtitleDetail(track),
                 tags: track.isForced ? ["Forced"] : []) {
                 model.selectSubtitle(track)
+            }
+        }
+        onlineSection
+    }
+
+    /// Nudges the subtitles against the picture when a file's timing is off.
+    private var timing: some View {
+        HStack(spacing: 10) {
+            Button { model.setSubtitleDelay(model.subtitleDelay - 0.25) } label: {
+                Image(systemName: "minus").frame(width: 18, height: 18)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Show subtitles earlier")
+            VStack(spacing: 2) {
+                Text("Timing").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.62))
+                Text(model.subtitleDelay == 0 ? "In sync" : String(format: "%+.2f s", model.subtitleDelay))
+                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .contentTransition(.numericText())
+            }
+            .frame(maxWidth: .infinity)
+            .onTapGesture { model.setSubtitleDelay(0) }
+            Button { model.setSubtitleDelay(model.subtitleDelay + 0.25) } label: {
+                Image(systemName: "plus").frame(width: 18, height: 18)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Show subtitles later")
+        }
+        .padding(10)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .animation(.snappy, value: model.subtitleDelay)
+    }
+
+    @ViewBuilder private var onlineSection: some View {
+        let added = Set(model.subtitleTracks.filter(\.isExternal).map(\.name))
+        let results = model.onlineSubtitles
+        HStack {
+            Text("ONLINE").font(.caption2.weight(.bold)).foregroundStyle(.white.opacity(0.5))
+            Spacer()
+            if model.searchingSubtitles {
+                ProgressView().controlSize(.small)
+            } else if results.isEmpty {
+                Button("Search OpenSubtitles", systemImage: "magnifyingglass", action: searchOnline)
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.glass)
+            }
+        }
+        .padding(.top, 10)
+        // A handful per language is plenty; files of one release rarely differ.
+        let grouped = Dictionary(grouping: results, by: \.language)
+        ForEach(grouped.keys.sorted { Languages.name(for: $0) < Languages.name(for: $1) }, id: \.self) { language in
+            ForEach(Array((grouped[language] ?? []).prefix(3).enumerated()), id: \.element.id) { index, result in
+                let title = index == 0 ? Languages.name(for: language) : "\(Languages.name(for: language)) \(index + 1)"
+                let name = "\(title) · OpenSubtitles"
+                row(selected: false, title: title, detail: "OpenSubtitles", tags: added.contains(name) ? ["Added"] : []) {
+                    model.addOnlineSubtitle(result, name: name)
+                }
             }
         }
     }
@@ -226,5 +285,22 @@ enum Languages {
     static func codes(for code: String) -> [String] {
         guard !code.isEmpty else { return [] }
         return [twoLetter[code], code, alternates[code]].compactMap { $0 }
+    }
+}
+
+extension Languages {
+    /// A readable name for a language code in any of the forms files and services use.
+    static func name(for code: String) -> String {
+        let lower = code.lowercased()
+        if let match = options.first(where: { $0.0 == lower || codes(for: $0.0).contains(lower) }), !match.0.isEmpty {
+            return match.1
+        }
+        return TrackLabel.languageName(lower) ?? code.uppercased()
+    }
+
+    /// Whether two codes name the same language ("en", "eng").
+    static func matches(_ code: String, preferred: String) -> Bool {
+        guard !preferred.isEmpty else { return false }
+        return codes(for: preferred).contains(code.lowercased())
     }
 }

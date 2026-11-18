@@ -23,6 +23,7 @@ struct DetailView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
+    @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
     @StateObject private var model = DetailModel()
@@ -66,7 +67,10 @@ struct DetailView: View {
                 .accessibilityLabel(library.isInWatchlist(shown) ? "Remove from My List" : "Add to My List")
             }
         }
-        .task { await model.load(item, library: library) }
+        .task {
+            await model.load(item, library: library)
+            if let target = primaryTarget { playback.prefetch(target, settings: settings) }
+        }
     }
 
     // MARK: Header
@@ -78,6 +82,9 @@ struct DetailView: View {
             RemoteImage(url: shown.background ?? shown.poster, targetWidth: width * 0.75)
                 .frame(width: width, height: headerHeight)
                 .clipped()
+                // On iPhone Duo's outer display (and beside a side bar) the picture continues under
+                // the status column instead of stopping short of the edge.
+                .backgroundExtensionEffect()
             LinearGradient(stops: [
                 .init(color: .clear, location: 0.25),
                 .init(color: Theme.background.opacity(0.75), location: 0.7),
@@ -149,12 +156,33 @@ struct DetailView: View {
             } else if item.kind == .series {
                 ProgressView()
             }
+            if let target = primaryTarget, item.kind == .movie {
+                downloadButton(target)
+            }
             if let trailer = model.detail?.trailerYouTubeID, let url = URL(string: "https://www.youtube.com/watch?v=\(trailer)") {
                 Button { openURL(url) } label: { Image(systemName: "film.stack").font(.headline) }
                     .buttonStyle(.glass)
                     .accessibilityLabel("Trailer")
             }
         }
+    }
+
+    @ViewBuilder private func downloadButton(_ target: PlaybackTarget) -> some View {
+        let item = downloads.item(for: target)
+        Button {
+            if item == nil { playback.download(target, settings: settings) }
+        } label: {
+            switch item?.state {
+            case .finished?: Image(systemName: "arrow.down.circle.fill").font(.headline)
+            case .downloading?:
+                ProgressView(value: item?.fraction ?? 0)
+                    .progressViewStyle(.circular)
+                    .frame(width: 20, height: 20)
+            default: Image(systemName: "arrow.down.circle").font(.headline)
+            }
+        }
+        .buttonStyle(.glass)
+        .accessibilityLabel(item?.isFinished == true ? "Downloaded" : "Download")
     }
 
     private func playTitle(_ target: PlaybackTarget, resume: Double?) -> String {
@@ -198,10 +226,15 @@ struct DetailView: View {
             }
             LazyVGrid(columns: wide ? [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)] : [GridItem(.flexible())], spacing: 14) {
                 ForEach(detail.episodes(in: model.season)) { episode in
-                    EpisodeRow(episode: episode, progress: library.progress(for: PlaybackTarget(item: shown, episode: episode))) {
-                        playback.play(PlaybackTarget(item: shown, episode: episode), settings: settings, library: library)
+                    let target = PlaybackTarget(item: shown, episode: episode)
+                    EpisodeRow(episode: episode, progress: library.progress(for: target),
+                               watchedElsewhere: library.isWatched(episode),
+                               downloaded: downloads.item(for: target)?.isFinished == true) {
+                        playback.play(target, settings: settings, library: library)
                     } chooseSource: {
-                        playback.chooseSource(for: PlaybackTarget(item: shown, episode: episode))
+                        playback.chooseSource(for: target)
+                    } download: {
+                        playback.download(target, settings: settings)
                     }
                 }
             }
@@ -226,8 +259,11 @@ struct DetailView: View {
 struct EpisodeRow: View {
     let episode: Episode
     let progress: PlaybackProgress?
+    var watchedElsewhere = false
+    var downloaded = false
     let play: () -> Void
     let chooseSource: () -> Void
+    var download: () -> Void = {}
 
     var body: some View {
         Button(action: play) {
@@ -245,7 +281,7 @@ struct EpisodeRow: View {
                         }
                         .padding(6)
                     }
-                    Image(systemName: progress?.isFinished == true ? "checkmark.circle.fill" : "play.circle.fill")
+                    Image(systemName: progress?.isFinished == true || (progress == nil && watchedElsewhere) ? "checkmark.circle.fill" : "play.circle.fill")
                         .font(.title2)
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.white, .black.opacity(0.35))
@@ -256,7 +292,13 @@ struct EpisodeRow: View {
                 .opacity(episode.hasAired ? 1 : 0.45)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(episode.number). \(episode.title)").font(.subheadline.weight(.semibold)).lineLimit(2)
+                    HStack(spacing: 6) {
+                        Text("\(episode.number). \(episode.title)").font(.subheadline.weight(.semibold)).lineLimit(2)
+                        if downloaded {
+                            Image(systemName: "arrow.down.circle.fill").font(.caption).foregroundStyle(Theme.accent)
+                                .accessibilityLabel("Downloaded")
+                        }
+                    }
                     if let released = episode.released {
                         Text(episode.hasAired ? released.formatted(date: .abbreviated, time: .omitted) : "Airs \(released.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption).foregroundStyle(Theme.secondaryText)
@@ -276,6 +318,9 @@ struct EpisodeRow: View {
         .contextMenu {
             Button(action: play) { Label("Play", systemImage: "play.fill") }
             Button(action: chooseSource) { Label("Choose Source", systemImage: "list.bullet.rectangle") }
+            if !downloaded {
+                Button(action: download) { Label("Download", systemImage: "arrow.down.circle") }
+            }
         }
     }
 }

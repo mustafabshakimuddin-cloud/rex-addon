@@ -7,6 +7,7 @@ struct PlayerView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
+    @EnvironmentObject private var trakt: TraktStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = PlayerModel()
     @State private var controlsVisible = true
@@ -14,23 +15,50 @@ struct PlayerView: View {
     @State private var scrubbing: Double?
     @State private var hideTask: Task<Void, Never>?
     @State private var width: CGFloat = 400
+    @State private var nextEpisode: Episode?
+    @State private var reportedStart = false
+    @State private var handledFailure = false
+    /// The fold, when an iPhone Duo stands half-open like a laptop: the picture goes above it and
+    /// the controls below, instead of both bending across the crease.
+    @State private var fold: CGRect?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
-            if let engine = model.engine {
-                AetherPlayerSurface(engine: engine)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+            if let fold {
+                tabletop(fold)
+            } else {
+                fullScreen
             }
+        }
+        .foldObserver($fold)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .statusBarHidden(!controlsVisible && fold == nil)
+        .persistentSystemOverlays(controlsVisible || fold != nil ? .automatic : .hidden)
+        .preferredColorScheme(.dark)
+        .animation(.easeInOut(duration: 0.22), value: controlsVisible)
+        .animation(.spring(duration: 0.35), value: panel)
+        .animation(.easeOut(duration: 0.3), value: model.hasFirstFrame)
+        .animation(.spring(duration: 0.45), value: fold)
+        .onAppear(perform: start)
+        .onDisappear(perform: finish)
+        .task { await loadNextEpisode() }
+        .onChange(of: model.isPlaying) { _, playing in
+            if playing { scheduleHide() }
+            scrobble(playing ? .start : .pause)
+        }
+        .onChange(of: model.state) { _, state in if state == .ended { ended() } }
+        .onChange(of: model.hasFirstFrame) { _, ready in if ready { started() } }
+        .onChange(of: model.errorMessage) { _, message in if let message { failed(message) } }
+        .onChange(of: model.stallCount) { _, _ in playback.playerStalled(session) }
+    }
 
-            if !model.hasFirstFrame && model.errorMessage == nil {
-                StartupCover(session: session)
-                    .transition(.opacity)
-            }
+    // MARK: Layouts
 
-            SubtitleOverlay(feed: model.subtitles, bottomInset: controlsVisible ? 150 : 36)
+    private var fullScreen: some View {
+        ZStack {
+            picture
+            SubtitleOverlay(feed: model.subtitles, bottomInset: controlsVisible ? 150 : 36, appearance: subtitleAppearance)
 
             // Owns the taps above the video: one shows or hides the controls, two toggle fill.
             Color.clear
@@ -47,30 +75,115 @@ struct PlayerView: View {
                 controls.transition(.opacity)
             }
 
-            if let tab = panel {
-                Color.black.opacity(0.35).ignoresSafeArea()
-                    .onTapGesture { closePanel() }
+            cornerActions
+                .padding(.horizontal, 20)
+                .padding(.bottom, controlsVisible ? 170 : 40)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+
+            optionsPanel
+            fallbackNotice
+        }
+    }
+
+    /// Half-open on a table: picture above the fold, everything you touch below it.
+    private func tabletop(_ fold: CGRect) -> some View {
+        VStack(spacing: 0) {
+            ZStack {
+                picture
+                SubtitleOverlay(feed: model.subtitles, bottomInset: 16, appearance: subtitleAppearance)
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture(count: 2) { model.fillsScreen.toggle() }
+                if model.isBusy && model.hasFirstFrame {
+                    ProgressView().controlSize(.large).tint(.white).allowsHitTesting(false)
+                }
+            }
+            .frame(height: max(fold.minY, 120))
+            .clipped()
+
+            Color.black.frame(height: fold.height)
+
+            ZStack {
+                VStack(spacing: 14) {
+                    topBar
+                    Spacer(minLength: 0)
+                    if let error = model.errorMessage { errorCard(error) } else { transport }
+                    HStack { Spacer(); cornerActions }
+                    Spacer(minLength: 0)
+                    bottomBar
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                optionsPanel
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .ignoresSafeArea(edges: .top)
+        .overlay { fallbackNotice }
+    }
+
+    private var picture: some View {
+        ZStack {
+            if let engine = model.engine {
+                AetherPlayerSurface(engine: engine)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
+            if !model.hasFirstFrame && model.errorMessage == nil {
+                StartupCover(session: session)
                     .transition(.opacity)
-                OptionsPanel(model: model, tab: tab, wide: width >= 640) { closePanel() }
-                    .transition(.move(edge: width >= 640 ? .trailing : .bottom).combined(with: .opacity))
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-        .statusBarHidden(!controlsVisible)
-        .persistentSystemOverlays(controlsVisible ? .automatic : .hidden)
-        .preferredColorScheme(.dark)
-        .animation(.easeInOut(duration: 0.22), value: controlsVisible)
-        .animation(.spring(duration: 0.35), value: panel)
-        .animation(.easeOut(duration: 0.3), value: model.hasFirstFrame)
-        .onAppear(perform: start)
-        .onDisappear {
-            hideTask?.cancel()
-            model.stop()
-            library.saveNow()
-        }
-        .onChange(of: model.isPlaying) { _, playing in if playing { scheduleHide() } }
-        .onChange(of: model.state) { _, state in if state == .ended { dismiss() } }
     }
+
+    @ViewBuilder private var optionsPanel: some View {
+        if let tab = panel {
+            Color.black.opacity(0.35).ignoresSafeArea()
+                .onTapGesture { closePanel() }
+                .transition(.opacity)
+            OptionsPanel(model: model, tab: tab, wide: width >= 640, searchOnline: searchSubtitles) { closePanel() }
+                .transition(.move(edge: width >= 640 ? .trailing : .bottom).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder private var fallbackNotice: some View {
+        if let notice = playback.fallbackNotice {
+            HStack(spacing: 10) {
+                ProgressView().tint(.white)
+                Text(notice).font(.subheadline.weight(.semibold))
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .glassEffect(.regular, in: .capsule)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 60)
+            .transition(.opacity)
+        }
+    }
+
+    /// Skip Intro and Up Next, bottom right, above the controls.
+    private var cornerActions: some View {
+        VStack(alignment: .trailing, spacing: 12) {
+            if settings.showSkipButtons && !model.chapters.isEmpty {
+                SkipChapterButton(time: model.time, chapters: model.chapters, duration: model.duration,
+                                  skipsCredits: nextEpisode == nil) { model.seek(to: $0) }
+            }
+            if let nextEpisode, let startsAt = upNextStart {
+                UpNextCard(time: model.time, next: nextEpisode, showName: session.target.item.name, startsAt: startsAt,
+                           countdown: settings.autoPlayNext, isPlaying: model.isPlaying) { playNext() }
+            }
+        }
+        .animation(.spring(duration: 0.35), value: model.chapters.count)
+    }
+
+    private var upNextStart: Double? {
+        guard model.duration > 300 else { return nil }
+        return model.chapters.creditsStart(duration: model.duration) ?? model.duration - 35
+    }
+
+    private var subtitleAppearance: SubtitleAppearance {
+        SubtitleAppearance(scale: settings.subtitleScale, style: settings.subtitleStyle, color: settings.subtitleColor)
+    }
+
+    // MARK: Lifecycle
 
     private func start() {
         let target = session.target
@@ -86,6 +199,76 @@ struct PlayerView: View {
             }
         )
         scheduleHide()
+    }
+
+    private func started() {
+        guard !reportedStart else { return }
+        reportedStart = true
+        playback.playerStarted(session)
+        // With subtitles wanted and none in the file in that language, fetch one from OpenSubtitles.
+        if settings.autoplaySubtitles && settings.searchOnlineSubtitles && !settings.preferredSubtitleLanguage.isEmpty {
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                model.searchOnlineSubtitles(kind: session.target.item.kind, videoID: session.target.videoID,
+                                            filename: session.source.file ?? session.source.release,
+                                            size: session.source.sizeBytes,
+                                            autoAdd: Languages.codes(for: settings.preferredSubtitleLanguage))
+            }
+        }
+    }
+
+    private func failed(_ message: String) {
+        guard !model.hasFirstFrame, !handledFailure else { return }
+        handledFailure = true
+        if playback.playerFailed(session, reason: message, position: nil) {
+            model.stop()
+        }
+    }
+
+    private func finish() {
+        hideTask?.cancel()
+        scrobble(.stop)
+        model.stop()
+        library.saveNow()
+    }
+
+    private func ended() {
+        if nextEpisode != nil && settings.autoPlayNext {
+            playNext()
+        } else {
+            dismiss()
+        }
+    }
+
+    private func scrobble(_ action: Trakt.ScrobbleAction) {
+        trakt.scrobble(action, target: session.target, position: model.currentTime, duration: model.duration)
+    }
+
+    private func searchSubtitles() {
+        model.searchOnlineSubtitles(kind: session.target.item.kind, videoID: session.target.videoID,
+                                    filename: session.source.file ?? session.source.release, size: session.source.sizeBytes)
+    }
+
+    // MARK: Next episode
+
+    private func loadNextEpisode() async {
+        guard let current = session.target.episode,
+              let detail = try? await Cinemeta.detail(.series, id: session.target.item.id) else { return }
+        let ordered = detail.episodes.filter { $0.season > 0 }.sorted { ($0.season, $0.number) < ($1.season, $1.number) }
+        guard let index = ordered.firstIndex(where: { $0.id == current.id }), ordered.indices.contains(index + 1) else { return }
+        let next = ordered[index + 1]
+        guard next.hasAired else { return }
+        nextEpisode = next
+        // Look its sources up now, so the switch at the credits is quick.
+        playback.prefetch(PlaybackTarget(item: session.target.item, episode: next), settings: settings)
+    }
+
+    private func playNext() {
+        guard let nextEpisode else { return }
+        scrobble(.stop)
+        library.record(session.target, position: model.duration, duration: model.duration)
+        playback.playNext(PlaybackTarget(item: session.target.item, episode: nextEpisode), after: session,
+                          settings: settings, library: library)
     }
 
     // MARK: Controls
@@ -184,6 +367,8 @@ struct PlayerView: View {
             TimelineBar(
                 time: model.time,
                 duration: model.duration,
+                chapters: model.chapters,
+                preview: { await model.thumbnail(at: $0) },
                 scrubbing: scrubbing,
                 onChange: { scrubbing = $0; hideTask?.cancel() },
                 onCommit: { value in
@@ -298,6 +483,8 @@ struct PlayerView: View {
 private struct TimelineBar: View {
     @ObservedObject var time: PlaybackTime
     let duration: Double
+    let chapters: [ChapterInfo]
+    let preview: (Double) async -> CGImage?
     let scrubbing: Double?
     let onChange: (Double) -> Void
     let onCommit: (Double) -> Void
@@ -305,7 +492,18 @@ private struct TimelineBar: View {
     var body: some View {
         let shown = scrubbing ?? time.currentTime
         VStack(spacing: 12) {
-            Scrubber(value: shown, buffered: time.buffered, duration: duration, onChange: onChange, onCommit: onCommit)
+            Scrubber(value: shown, buffered: time.buffered, duration: duration,
+                     marks: chapters.map(\.startSeconds).filter { $0 > 1 }, onChange: onChange, onCommit: onCommit)
+                .overlay(alignment: .bottomLeading) {
+                    if let scrubbing, duration > 0 {
+                        GeometryReader { proxy in
+                            let x = proxy.size.width * CGFloat(min(max(scrubbing / duration, 0), 1))
+                            ScrubPreview(seconds: scrubbing, provider: preview)
+                                .fixedSize()
+                                .position(x: min(max(x, 88), proxy.size.width - 88), y: -78)
+                        }
+                    }
+                }
             HStack {
                 Text(PlayerView.clock(shown))
                 Spacer()
@@ -370,6 +568,8 @@ struct Scrubber: View {
     let value: Double
     let buffered: Double
     let duration: Double
+    /// Chapter starts, drawn as small gaps in the track.
+    var marks: [Double] = []
     let onChange: (Double) -> Void
     let onCommit: (Double) -> Void
     @State private var dragging = false
@@ -384,6 +584,11 @@ struct Scrubber: View {
                 Capsule().fill(.white.opacity(0.18))
                 Capsule().fill(.white.opacity(0.32)).frame(width: width * max(loaded, progress))
                 Capsule().fill(Theme.accentGradient).frame(width: width * progress)
+                ForEach(marks, id: \.self) { mark in
+                    Rectangle().fill(.black.opacity(0.55))
+                        .frame(width: 2)
+                        .offset(x: width * CGFloat(min(max(mark / span, 0), 1)) - 1)
+                }
                 Circle()
                     .fill(.white)
                     .frame(width: dragging ? 22 : 14, height: dragging ? 22 : 14)

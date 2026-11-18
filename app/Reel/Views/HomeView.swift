@@ -62,13 +62,14 @@ struct HomeView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @StateObject private var model = HomeModel()
     @State private var width: CGFloat = 390
+    @State private var height: CGFloat = 844
 
     var body: some View {
         let metrics = CardMetrics(sizeClass)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 30) {
                 if !model.hero.isEmpty {
-                    HeroCarousel(items: model.hero, width: width)
+                    HeroCarousel(items: model.hero, width: width, maxHeight: height * 0.66)
                 } else if model.isLoading {
                     Rectangle().fill(Theme.surface).frame(height: heroHeight).redacted(reason: .placeholder)
                 }
@@ -108,7 +109,7 @@ struct HomeView: View {
             }
             .padding(.bottom, 40)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
         .ignoresSafeArea(edges: .top)
         .background(Theme.Backdrop())
         .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
@@ -126,12 +127,14 @@ struct HomeView: View {
         .refreshable { await model.reload() }
     }
 
-    private var heroHeight: CGFloat { HeroCarousel.height(for: width) }
+    private var heroHeight: CGFloat { min(HeroCarousel.height(for: width), height * 0.66) }
 }
 
 struct HeroCarousel: View {
     let items: [MediaItem]
     let width: CGFloat
+    /// The outer display of iPhone Duo is short (678 pt); a poster-shaped hero would fill it.
+    var maxHeight: CGFloat = .infinity
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
@@ -147,7 +150,7 @@ struct HeroCarousel: View {
     }
 
     var body: some View {
-        let height = Self.height(for: width)
+        let height = min(Self.height(for: width), maxHeight)
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 0) {
                 ForEach(items) { item in
@@ -165,6 +168,9 @@ struct HeroCarousel: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $selection)
         .frame(height: height)
+        // The pages are as wide as the safe area; on iPhone Duo's outer display (and beside the
+        // side rail) that stops short of the screen edge. Continue the picture underneath.
+        .backgroundExtensionEffect()
         .overlay(alignment: .bottom) {
             HStack(spacing: 6) {
                 ForEach(items) { item in

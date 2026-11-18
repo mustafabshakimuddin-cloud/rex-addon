@@ -82,29 +82,6 @@ struct TorrentioConfig: Equatable {
     }
 }
 
-/// One Torrentio result, with the facts its two text fields carry pulled apart.
-struct StreamSource: Identifiable, Hashable {
-    let id: String
-    var quality: String            // "4K", "1080p", …
-    var tags: [String]             // "DV", "HDR", "HDR10+", …
-    var release: String            // torrent name
-    var file: String?              // file inside a pack, when different
-    var size: String?
-    var sizeBytes: Double
-    var seeders: Int?
-    var provider: String?
-    var languages: String?
-    var debridTag: String?         // "RD+", "RD download", …
-    var url: URL?                  // debrid resolve link
-    var infoHash: String?
-
-    var isCached: Bool { debridTag?.hasSuffix("+") ?? false }
-    var isPlayable: Bool { url != nil }
-
-    static let qualityOrder = ["4K", "1080p", "720p", "480p"]
-    var qualityRank: Int { Self.qualityOrder.firstIndex(of: quality) ?? Self.qualityOrder.count }
-}
-
 enum Torrentio {
     static let base = "https://torrentio.strem.fun"
 
@@ -113,19 +90,21 @@ enum Torrentio {
         let configPart = segment.isEmpty ? "" : "/" + (segment.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? segment)
         let id = videoID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/:"))) ?? videoID
         let url = try HTTP.url("\(base)\(configPart)/stream/\(kind.rawValue)/\(id).json")
-        let response = try await HTTP.get(url, as: StreamsResponse.self)
-        return response.streams.enumerated().map { index, raw in raw.source(index: index) }
+        return try await StremioStreams.fetch(url, addon: "Torrentio")
     }
 
-    /// Torrentio's `/resolve/` links make the debrid service prepare the file, then redirect to it.
-    /// Follow that one redirect here so the player gets the final address, and turn Torrentio's
-    /// "error videos" into readable errors instead of playing a clip that explains the failure.
+    /// Torrentio's `/resolve/` links (and the playback links of other addons) make the debrid
+    /// service prepare the file, then redirect to it. Follow that one redirect here so the player
+    /// gets the final address, and turn Torrentio's "error videos" into readable errors instead of
+    /// playing a clip that explains the failure. Only the headers are read: a link that turns out
+    /// to be the file itself is cancelled before its body arrives.
     static func resolve(_ source: StreamSource) async throws -> URL {
         guard let url = source.url else { throw ResolveError.notCached }
-        guard url.path.contains("/resolve/") else { return url }
+        guard source.needsResolve else { return url }
         var request = URLRequest(url: url, timeoutInterval: 90)
         request.setValue("\(AppConfig.name)/1.0", forHTTPHeaderField: "User-Agent")
-        let (_, response) = try await HTTP.session.data(for: request, delegate: RedirectStopper.shared)
+        let (bytes, response) = try await HTTP.session.bytes(for: request, delegate: RedirectStopper.shared)
+        bytes.task.cancel()
         guard let http = response as? HTTPURLResponse else { throw ResolveError.unexpected("no response") }
         if let location = http.value(forHTTPHeaderField: "Location"), let target = URL(string: location, relativeTo: url)?.absoluteURL {
             if let failure = ResolveError(errorVideo: target) { throw failure }
@@ -172,75 +151,5 @@ private final class RedirectStopper: NSObject, URLSessionTaskDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         completionHandler(nil)
-    }
-}
-
-// MARK: - Wire format
-
-private struct StreamsResponse: Decodable {
-    let streams: [RawStream]
-}
-
-private struct RawStream: Decodable {
-    var name: String?
-    var title: String?
-    var url: String?
-    var infoHash: String?
-    var behaviorHints: Hints?
-
-    struct Hints: Decodable { var filename: String?; var bingeGroup: String? }
-
-    func source(index: Int) -> StreamSource {
-        // name: "[RD+] Torrentio\n4k DV | HDR"   title: "Release\nfile.mkv\n👤 12 💾 4.1 GB ⚙️ YTS\n🇬🇧"
-        let nameLines = (name ?? "").components(separatedBy: "\n")
-        let head = nameLines.first ?? ""
-        let debridTag = head.range(of: #"\[([^\]]+)\]"#, options: .regularExpression).map { String(head[$0].dropFirst().dropLast()) }
-        let qualityLine = nameLines.dropFirst().joined(separator: " ")
-        let qualityParts = qualityLine.components(separatedBy: CharacterSet(charactersIn: " |")).filter { !$0.isEmpty }
-        let rawQuality = qualityParts.first ?? ""
-        let quality = rawQuality.lowercased() == "4k" ? "4K" : (rawQuality.isEmpty ? "Other" : rawQuality)
-        let tags = Array(qualityParts.dropFirst())
-
-        let lines = (title ?? "").components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        let statsIndex = lines.firstIndex { $0.contains("👤") || $0.contains("💾") || $0.contains("⚙️") }
-        let textLines = statsIndex.map { Array(lines[..<$0]) } ?? lines
-        let stats = statsIndex.map { lines[$0] } ?? ""
-        let afterStats = statsIndex.map { Array(lines[($0 + 1)...]) } ?? []
-
-        let seeders = Self.capture(#"👤\s*(\d+)"#, in: stats).flatMap(Int.init)
-        let size = Self.capture(#"💾\s*([\d.,]+\s*[KMGT]?B)"#, in: stats)
-        let provider = Self.capture(#"⚙️\s*(.+)$"#, in: stats)?.trimmingCharacters(in: .whitespaces)
-
-        return StreamSource(
-            id: "\(index)-\(infoHash ?? url ?? name ?? "")",
-            quality: quality,
-            tags: tags,
-            release: textLines.first ?? behaviorHints?.filename ?? "Unknown release",
-            file: textLines.count > 1 ? textLines.last : nil,
-            size: size,
-            sizeBytes: size.map(Self.bytes) ?? 0,
-            seeders: seeders,
-            provider: provider,
-            languages: afterStats.isEmpty ? nil : afterStats.joined(separator: " "),
-            debridTag: debridTag,
-            url: url.flatMap(URL.init(string:)),
-            infoHash: infoHash
-        )
-    }
-
-    static func capture(_ pattern: String, in text: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-              match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: text) else { return nil }
-        return String(text[range])
-    }
-
-    static func bytes(_ size: String) -> Double {
-        let parts = size.replacingOccurrences(of: ",", with: ".").split(separator: " ")
-        guard let number = parts.first.flatMap({ Double($0) }) else { return 0 }
-        let unit = parts.count > 1 ? String(parts[1]) : "B"
-        let powers: [String: Double] = ["B": 0, "KB": 1, "MB": 2, "GB": 3, "TB": 4]
-        let power = powers[unit] ?? 0
-        return number * pow(1024, power)
     }
 }

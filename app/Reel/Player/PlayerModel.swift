@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreGraphics
 import AVKit
 import Combine
 import MediaPlayer
@@ -35,6 +36,13 @@ final class SubtitleFeed: ObservableObject {
     @Published private(set) var visible: [SubtitleCue] = []
     private var cues: [SubtitleCue] = []
     private var now: Double = 0
+    /// Positive shows subtitles later, negative earlier.
+    private(set) var delay: Double = 0
+
+    fileprivate func update(delay: Double) {
+        self.delay = delay
+        refresh()
+    }
 
     fileprivate func update(cues: [SubtitleCue]) {
         self.cues = cues
@@ -47,7 +55,8 @@ final class SubtitleFeed: ObservableObject {
     }
 
     private func refresh() {
-        let next = cues.isEmpty ? [] : cues.filter { now >= $0.startTime && now <= $0.endTime }
+        let at = now - delay
+        let next = cues.isEmpty ? [] : cues.filter { at >= $0.startTime && at <= $0.endTime }
         guard next.count != visible.count
             || zip(next, visible).contains(where: { $0.id != $1.id || $0.startTime != $1.startTime || $0.endTime != $1.endTime })
         else { return }
@@ -74,6 +83,12 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var hasFirstFrame = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var rate: Float = 1
+    @Published private(set) var chapters: [ChapterInfo] = []
+    @Published private(set) var subtitleDelay: Double = 0
+    @Published private(set) var onlineSubtitles: [OnlineSubtitles.Result] = []
+    @Published private(set) var searchingSubtitles = false
+    /// Raised each time the engine reports a rebuffer, for the source memory.
+    @Published private(set) var stallCount = 0
     @Published var fillsScreen = false {
         didSet { engine?.videoGravity = fillsScreen ? .resizeAspectFill : .resizeAspect }
     }
@@ -101,6 +116,11 @@ final class PlayerModel: ObservableObject {
         engine.$activeSubtitleTrackIndex.removeDuplicates().sink { [weak self] in self?.activeSubtitle = $0 }.store(in: &bag)
         engine.$videoFormat.removeDuplicates().sink { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
         engine.$hasFirstFrameReadyForDisplay.removeDuplicates().sink { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
+        engine.$mediaChapters.removeDuplicates().sink { [weak self] in self?.chapters = $0 }.store(in: &bag)
+        engine.$playbackPhase.removeDuplicates().sink { [weak self] phase in
+            guard let self, self.hasFirstFrame, case .rebuffering = phase else { return }
+            self.stallCount += 1
+        }.store(in: &bag)
         // Cues and the source clock go to the subtitle feed only, never to the player.
         engine.$subtitleCues.sink { [weak self] in self?.subtitles.update(cues: $0) }.store(in: &bag)
         engine.clock.$sourceTime.removeDuplicates().sink { [weak self] in self?.subtitles.update(time: $0) }.store(in: &bag)
@@ -187,6 +207,52 @@ final class PlayerModel: ObservableObject {
     }
 
     func selectAudio(_ track: TrackInfo) { engine?.selectAudioTrack(index: track.id) }
+
+    // MARK: Subtitles
+
+    func setSubtitleDelay(_ seconds: Double) {
+        let value = (seconds * 4).rounded() / 4
+        subtitleDelay = value
+        subtitles.update(delay: value)
+        engine?.setSoftwareSubtitleDelay(value)
+    }
+
+    /// Looks the title up on OpenSubtitles. With `autoAdd`, the first result in a preferred
+    /// language becomes a track, which the engine then selects by the same language preference.
+    func searchOnlineSubtitles(kind: MediaKind, videoID: String, filename: String?, size: Double?, autoAdd languages: [String] = []) {
+        guard !searchingSubtitles else { return }
+        searchingSubtitles = true
+        Task {
+            defer { searchingSubtitles = false }
+            let results = (try? await OnlineSubtitles.search(kind: kind, videoID: videoID, filename: filename, size: size)) ?? []
+            onlineSubtitles = results
+            guard !languages.isEmpty else { return }
+            let hasOwn = subtitleTracks.contains { track in
+                guard let language = track.language?.lowercased() else { return false }
+                return languages.contains(language)
+            }
+            if !hasOwn, let pick = results.first(where: { languages.contains($0.language) }) {
+                addOnlineSubtitle(pick, select: false)
+            }
+        }
+    }
+
+    func addOnlineSubtitle(_ result: OnlineSubtitles.Result, name: String? = nil, select: Bool = true) {
+        guard let engine else { return }
+        let name = name ?? "\(Languages.name(for: result.language)) · OpenSubtitles"
+        if let existing = subtitleTracks.first(where: { $0.isExternal && $0.name == name }) {
+            if select { engine.selectSubtitleTrack(index: existing.id) }
+            return
+        }
+        let info = engine.addExternalSubtitleTrack(ExternalSubtitleTrack(url: result.url, name: name, language: result.language))
+        if select { engine.selectSubtitleTrack(index: info.id) }
+    }
+
+    // MARK: Previews
+
+    func thumbnail(at seconds: Double) async -> CGImage? {
+        await engine?.scrubThumbnail(atSeconds: seconds, maxWidth: 320)
+    }
 
     func selectSubtitle(_ track: TrackInfo?) {
         guard let engine else { return }

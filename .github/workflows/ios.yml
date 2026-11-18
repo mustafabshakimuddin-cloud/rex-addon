@@ -131,6 +131,7 @@ jobs:
   simulator:
     name: Launch on simulators
     runs-on: xcode-27
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: app
@@ -170,9 +171,12 @@ jobs:
           grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
 
       - name: Launch and screenshot
+        timeout-minutes: 25
         run: |
           APP=build/Build/Products/Debug-iphonesimulator/Reel.app
           mkdir -p shots
+          # perl's alarm stands in for coreutils timeout, which macOS lacks.
+          limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
           for NAME in "iPhone Duo" "iPhone 17"; do
             # Newest runtime first; a runner image can list a device whose runtime is not installed
             # ("The iOS 27.2 simulator runtime is not available"), so fall back to the next one.
@@ -182,30 +186,38 @@ jobs:
           print(' '.join(u for _,u in sorted(c, reverse=True)))")
             UDID=""
             for C in $CANDIDATES; do
-              xcrun simctl boot "$C" >/dev/null 2>&1 || true
-              if xcrun simctl bootstatus "$C" -b >/dev/null 2>&1; then UDID="$C"; break; fi
+              limit 240 xcrun simctl boot "$C" >/dev/null 2>&1 || true
+              if limit 300 xcrun simctl bootstatus "$C" -b >/dev/null 2>&1; then UDID="$C"; break; fi
               echo "$NAME $C did not boot, trying the next runtime"
             done
             if [ -z "$UDID" ]; then echo "::warning::No bootable $NAME simulator on this runner"; continue; fi
             xcrun simctl list devices | grep "$UDID" || true
-            xcrun simctl install "$UDID" "$APP"
-            xcrun simctl launch "$UDID" community.reel.app
-            sleep 25
+            limit 120 xcrun simctl install "$UDID" "$APP"
             SLUG=$(echo "$NAME" | tr ' ' '-')
-            if ! xcrun simctl spawn "$UDID" launchctl list | grep -q community.reel.app; then
-              echo "::error::$NAME: the app is not running 25 s after launch (crashed?)"
-              xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
-            fi
             # iPhone Duo has two displays (outer and inner); capture each one simctl lists.
-            DISPLAYS=$(xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
+            DISPLAYS=$(limit 30 xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
             [ -z "$DISPLAYS" ] && DISPLAYS="default"
-            for D in $DISPLAYS; do
-              SHOT="$SLUG${D#--display=}"; [ "$D" = "default" ] && SHOT="$SLUG"
-              if [ "$D" = "default" ]; then xcrun simctl io "$UDID" screenshot "shots/$SHOT.png"; else xcrun simctl io "$UDID" screenshot "$D" "shots/$SHOT.png"; fi
-              sips -Z 640 -s format jpeg -s formatOptions 55 "shots/$SHOT.png" --out "shots/$SHOT-small.jpg" >/dev/null
-              echo "=== SCREENSHOT $SHOT BEGIN ==="; base64 -i "shots/$SHOT-small.jpg"; echo "=== SCREENSHOT $SHOT END ==="
+            FIRST=1
+            for SCREEN in home detail sources player settings library search; do
+              limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
+              if [ "$SCREEN" = "home" ]; then
+                limit 60 xcrun simctl launch "$UDID" community.reel.app
+              else
+                limit 60 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN"
+              fi
+              if [ $FIRST = 1 ]; then sleep 25; FIRST=0; else sleep 12; fi
+              if ! limit 30 xcrun simctl spawn "$UDID" launchctl list | grep -q community.reel.app; then
+                echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"
+                limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
+              fi
+              for D in $DISPLAYS; do
+                SHOT="$SLUG-$SCREEN${D#--display=}"; [ "$D" = "default" ] && SHOT="$SLUG-$SCREEN"
+                if [ "$D" = "default" ]; then limit 30 xcrun simctl io "$UDID" screenshot "shots/$SHOT.png" || continue
+                else limit 30 xcrun simctl io "$UDID" screenshot "$D" "shots/$SHOT.png" || continue; fi
+                sips -Z 640 -s format jpeg -s formatOptions 55 "shots/$SHOT.png" --out "shots/$SHOT-small.jpg" >/dev/null
+              done
             done
-            xcrun simctl shutdown "$UDID" || true
+            limit 60 xcrun simctl shutdown "$UDID" || true
           done
 
       - uses: actions/upload-artifact@v4

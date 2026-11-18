@@ -17,6 +17,20 @@ final class AppSettings: ObservableObject {
     @Published var preferredAudioLanguage: String { didSet { defaults.set(preferredAudioLanguage, forKey: Keys.audioLanguage) } }
     @Published var autoplaySubtitles: Bool { didSet { defaults.set(autoplaySubtitles, forKey: Keys.autoplaySubtitles) } }
     @Published var autoPlayBest: Bool { didSet { defaults.set(autoPlayBest, forKey: Keys.autoPlayBest) } }
+    /// Stremio addons whose streams are merged with Torrentio's.
+    @Published var addons: [StreamAddon] { didSet { defaults.set(try? JSONEncoder().encode(addons), forKey: Keys.addons) } }
+    /// Resolve the likely pick on a title page and fetch its first bytes. Adds that release to the
+    /// debrid account before Play is pressed, so it is off unless chosen.
+    @Published var prepareAhead: Bool { didSet { defaults.set(prepareAhead, forKey: Keys.prepareAhead) } }
+    @Published var subtitleScale: Double { didSet { defaults.set(subtitleScale, forKey: Keys.subtitleScale) } }
+    @Published var subtitleStyle: SubtitleStyle { didSet { defaults.set(subtitleStyle.rawValue, forKey: Keys.subtitleStyle) } }
+    @Published var subtitleColor: SubtitleColor { didSet { defaults.set(subtitleColor.rawValue, forKey: Keys.subtitleColor) } }
+    /// Search OpenSubtitles when a file has no subtitles in the preferred language.
+    @Published var searchOnlineSubtitles: Bool { didSet { defaults.set(searchOnlineSubtitles, forKey: Keys.onlineSubtitles) } }
+    /// Show Skip Intro / Skip Credits when the file's chapters name them.
+    @Published var showSkipButtons: Bool { didSet { defaults.set(showSkipButtons, forKey: Keys.skipButtons) } }
+    /// Offer the next episode near the end of one, and start it after a countdown.
+    @Published var autoPlayNext: Bool { didSet { defaults.set(autoPlayNext, forKey: Keys.autoPlayNext) } }
 
     init() {
         debridService = DebridService(rawValue: defaults.string(forKey: Keys.service) ?? "") ?? .none
@@ -30,6 +44,14 @@ final class AppSettings: ObservableObject {
         preferredAudioLanguage = defaults.string(forKey: Keys.audioLanguage) ?? ""
         autoplaySubtitles = defaults.object(forKey: Keys.autoplaySubtitles) as? Bool ?? false
         autoPlayBest = defaults.object(forKey: Keys.autoPlayBest) as? Bool ?? false
+        addons = (defaults.data(forKey: Keys.addons)).flatMap { try? JSONDecoder().decode([StreamAddon].self, from: $0) } ?? []
+        prepareAhead = defaults.object(forKey: Keys.prepareAhead) as? Bool ?? false
+        subtitleScale = defaults.object(forKey: Keys.subtitleScale) as? Double ?? 1
+        subtitleStyle = SubtitleStyle(rawValue: defaults.string(forKey: Keys.subtitleStyle) ?? "") ?? .outline
+        subtitleColor = SubtitleColor(rawValue: defaults.string(forKey: Keys.subtitleColor) ?? "") ?? .white
+        searchOnlineSubtitles = defaults.object(forKey: Keys.onlineSubtitles) as? Bool ?? true
+        showSkipButtons = defaults.object(forKey: Keys.skipButtons) as? Bool ?? true
+        autoPlayNext = defaults.object(forKey: Keys.autoPlayNext) as? Bool ?? true
     }
 
     var torrentio: TorrentioConfig {
@@ -40,6 +62,11 @@ final class AppSettings: ObservableObject {
     }
 
     var isDebridConfigured: Bool { torrentio.hasDebrid }
+
+    /// Torrentio needs a debrid service to give playable links; an addon may not.
+    var canFindSources: Bool { isDebridConfigured || addons.contains(where: \.enabled) }
+
+    var sourceQuery: SourceQuery { SourceQuery(torrentio: torrentio, addons: addons) }
 
     private enum Keys {
         static let service = "debrid.service"
@@ -53,5 +80,31 @@ final class AppSettings: ObservableObject {
         static let audioLanguage = "player.audioLanguage"
         static let autoplaySubtitles = "player.autoplaySubtitles"
         static let autoPlayBest = "playback.autoPlayBest"
+        static let addons = "sources.addons"
+        static let prepareAhead = "playback.prepareAhead"
+        static let subtitleScale = "subtitles.scale"
+        static let subtitleStyle = "subtitles.style"
+        static let subtitleColor = "subtitles.color"
+        static let onlineSubtitles = "subtitles.online"
+        static let skipButtons = "player.skipButtons"
+        static let autoPlayNext = "player.autoPlayNext"
     }
+}
+
+enum SubtitleStyle: String, CaseIterable, Identifiable {
+    case outline, shadow, box
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .outline: return "Outline"
+        case .shadow: return "Drop shadow"
+        case .box: return "Dark box"
+        }
+    }
+}
+
+enum SubtitleColor: String, CaseIterable, Identifiable {
+    case white, yellow, cyan
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
 }

@@ -2,6 +2,9 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var trakt: TraktStore
+    @EnvironmentObject private var memory: SourceMemory
+    @State private var confirmForget = false
     @State private var keyDraft = ""
     @State private var testState: TestState = .idle
 
@@ -62,6 +65,44 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink {
+                    AddonsView()
+                } label: {
+                    LabeledContent("Stremio addons", value: settings.addons.isEmpty ? "None" : "\(settings.addons.filter(\.enabled).count) on")
+                }
+                Toggle("Get streams ready on title pages", isOn: $settings.prepareAhead)
+            } header: {
+                Text("More Sources")
+            } footer: {
+                Text("Addons such as Comet or MediaFusion add their results to Torrentio's, so a title still plays when one of them is down. Getting streams ready resolves the likely pick when you open a title, so Play starts at once; it adds that release to your debrid account before you press Play.")
+            }
+
+            Section {
+                Toggle("Play next episode automatically", isOn: $settings.autoPlayNext)
+                Toggle("Show Skip Intro and Skip Credits", isOn: $settings.showSkipButtons)
+                Button("Forget source history", role: .destructive) { confirmForget = true }
+                    .confirmationDialog("Forget which sources played well and which failed?", isPresented: $confirmForget, titleVisibility: .visible) {
+                        Button("Forget", role: .destructive) { memory.forgetAll() }
+                    }
+            } header: {
+                Text("Playback")
+            } footer: {
+                Text("\(AppConfig.name) remembers which releases played and which failed, and uses that when it picks a source for you. Skip buttons appear when a file's chapters name the intro, recap or credits.")
+            }
+
+            Section {
+                NavigationLink {
+                    TraktSettingsView()
+                } label: {
+                    LabeledContent("Trakt", value: trakt.isConnected ? "Connected" : "Not connected")
+                }
+            } header: {
+                Text("Sync")
+            } footer: {
+                Text("Trakt keeps your watchlist, resume points and watched episodes in step with other apps and devices, and records what you watch here.")
+            }
+
+            Section {
                 Picker("Audio language", selection: $settings.preferredAudioLanguage) {
                     ForEach(Languages.options, id: \.0) { Text($0.1).tag($0.0) }
                 }
@@ -69,15 +110,30 @@ struct SettingsView: View {
                 Picker("Subtitle language", selection: $settings.preferredSubtitleLanguage) {
                     ForEach(Languages.options.filter { !$0.0.isEmpty }, id: \.0) { Text($0.1).tag($0.0) }
                 }
+                Toggle("Find subtitles online when missing", isOn: $settings.searchOnlineSubtitles)
             } header: {
                 Text("Player")
             } footer: {
-                Text("The audio language is chosen as the stream opens, so the right track starts straight away. Multichannel and Dolby Atmos tracks play in Spatial Audio on supported headphones.")
+                Text("The audio language is chosen as the stream opens, so the right track starts straight away. Multichannel and Dolby Atmos tracks play in Spatial Audio on supported headphones. Missing subtitles come from OpenSubtitles.")
+            }
+
+            Section("Subtitle Appearance") {
+                VStack(alignment: .leading) {
+                    LabeledContent("Size", value: "\(Int(settings.subtitleScale * 100))%")
+                    Slider(value: $settings.subtitleScale, in: 0.7...1.6, step: 0.1)
+                }
+                Picker("Style", selection: $settings.subtitleStyle) {
+                    ForEach(SubtitleStyle.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Colour", selection: $settings.subtitleColor) {
+                    ForEach(SubtitleColor.allCases) { Text($0.title).tag($0) }
+                }
+                SubtitlePreview(appearance: SubtitleAppearance(scale: settings.subtitleScale, style: settings.subtitleStyle, color: settings.subtitleColor))
             }
 
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
-                Text("Catalogue by Cinemeta. Sources by Torrentio. Playback by AetherEngine (LGPL 3 with an App Store exception) and FFmpeg (LGPL). \(AppConfig.name) hosts no content.")
+                Text("Catalogue by Cinemeta. Sources by Torrentio and the addons you add. Subtitles by OpenSubtitles. Sync by Trakt. Playback by AetherEngine (LGPL 3 with an App Store exception) and FFmpeg (LGPL). \(AppConfig.name) hosts no content.")
                     .font(.footnote)
                     .foregroundStyle(Theme.secondaryText)
             }
@@ -110,7 +166,7 @@ struct SettingsView: View {
         config.cachedOnly = true
         do {
             let sources = try await Torrentio.streams(kind: .movie, videoID: "tt0111161", config: config)
-            guard let first = PlaybackCenter.rank(sources).first else {
+            guard let first = sources.first(where: { $0.isCached && $0.isPlayable }) else {
                 testState = .failed("No instant sources came back")
                 return
             }
@@ -151,6 +207,42 @@ struct MultiSelectList: View {
             if !selection.isEmpty {
                 Button("Clear") { selection = [] }
             }
+        }
+    }
+}
+
+/// What subtitles will look like, over a picture-like gradient.
+private struct SubtitlePreview: View {
+    let appearance: SubtitleAppearance
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            LinearGradient(colors: [Color(red: 0.95, green: 0.8, blue: 0.55), Color(red: 0.2, green: 0.25, blue: 0.4)],
+                           startPoint: .topTrailing, endPoint: .bottomLeading)
+            Text("The quick brown fox\njumps over the lazy dog")
+                .font(.system(size: 17 * appearance.scale, weight: .semibold))
+                .foregroundStyle(appearance.foreground)
+                .multilineTextAlignment(.center)
+                .modifier(PreviewBacking(style: appearance.style))
+                .padding(.bottom, 14)
+        }
+        .frame(height: 130)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+        .accessibilityHidden(true)
+    }
+}
+
+private struct PreviewBacking: ViewModifier {
+    let style: SubtitleStyle
+    func body(content: Content) -> some View {
+        switch style {
+        case .outline:
+            content.shadow(color: .black, radius: 0.5).shadow(color: .black.opacity(0.9), radius: 2, y: 1).shadow(color: .black.opacity(0.6), radius: 6)
+        case .shadow:
+            content.shadow(color: .black.opacity(0.85), radius: 3, x: 1.5, y: 2)
+        case .box:
+            content.padding(.horizontal, 8).padding(.vertical, 3).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
     }
 }

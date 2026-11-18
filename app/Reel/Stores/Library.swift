@@ -25,6 +25,11 @@ final class Library: ObservableObject {
 
     @Published private(set) var watchlist: [MediaItem] = []
     @Published private(set) var progress: [String: PlaybackProgress] = [:]
+    /// Watched on another device, as Trakt reports it: film IMDb ids and episode video ids.
+    @Published private(set) var externalWatched: Set<String> = []
+
+    /// Told about each watchlist change the user makes here, so Trakt can follow.
+    var onWatchlistChange: ((MediaItem, Bool) -> Void)?
 
     private let fileURL: URL
     private var saveTask: Task<Void, Never>?
@@ -46,10 +51,37 @@ final class Library: ObservableObject {
     func toggleWatchlist(_ item: MediaItem) {
         if let index = watchlist.firstIndex(where: { $0.id == item.id }) {
             watchlist.remove(at: index)
+            onWatchlistChange?(item, false)
         } else {
             watchlist.insert(item, at: 0)
+            onWatchlistChange?(item, true)
         }
         scheduleSave()
+    }
+
+    /// Adds what Trakt's watchlist has and this one lacks. Nothing is removed: a title taken off
+    /// here is taken off Trakt as it happens, so a difference left over is one Trakt added.
+    func mergeWatchlist(_ items: [MediaItem]) {
+        let known = Set(watchlist.map(\.id))
+        let added = items.filter { !known.contains($0.id) }
+        guard !added.isEmpty else { return }
+        watchlist.append(contentsOf: added)
+        scheduleSave()
+    }
+
+    /// A resume point from another device, kept only when it is newer than the one here.
+    func importResume(_ target: PlaybackTarget, fraction: Double, runtime: Double, at date: Date) {
+        if let existing = progress[target.videoID], existing.updatedAt >= date { return }
+        let duration = max(runtime, 60)
+        var item = target.item
+        if let existing = progress[target.videoID] { item = existing.item }
+        progress[target.videoID] = PlaybackProgress(item: item, episode: target.episode, position: duration * fraction,
+                                                    duration: duration, updatedAt: date)
+        scheduleSave(after: 2)
+    }
+
+    func setExternalWatched(movies: Set<String>, episodes: Set<String>) {
+        externalWatched = movies.union(episodes)
     }
 
     // MARK: Progress
@@ -70,7 +102,9 @@ final class Library: ObservableObject {
         return entry.position
     }
 
-    func isWatched(_ episode: Episode) -> Bool { progress[episode.id]?.isFinished ?? false }
+    func isWatched(_ episode: Episode) -> Bool { progress[episode.id]?.isFinished ?? externalWatched.contains(episode.id) }
+
+    func isWatched(_ target: PlaybackTarget) -> Bool { progress[target.videoID]?.isFinished ?? externalWatched.contains(target.videoID) }
 
     func record(_ target: PlaybackTarget, position: Double, duration: Double) {
         guard duration > 0, position.isFinite, duration.isFinite else { return }
@@ -92,10 +126,10 @@ final class Library: ObservableObject {
     /// The episode to offer next: the one after the latest watched, or the first.
     func nextEpisode(in detail: MediaDetail) -> Episode? {
         let regular = detail.episodes.filter { $0.season > 0 }.sorted { ($0.season, $0.number) < ($1.season, $1.number) }
-        let latest = regular.lastIndex { progress[$0.id] != nil }
+        let latest = regular.lastIndex { progress[$0.id] != nil || externalWatched.contains($0.id) }
         guard let latest else { return regular.first }
         let current = regular[latest]
-        if let entry = progress[current.id], !entry.isFinished { return current }
+        if let entry = progress[current.id], !entry.isFinished, !externalWatched.contains(current.id) { return current }
         return regular.indices.contains(latest + 1) ? regular[latest + 1] : current
     }
 

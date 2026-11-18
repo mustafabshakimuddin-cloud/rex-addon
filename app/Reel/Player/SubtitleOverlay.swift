@@ -7,11 +7,27 @@ struct SubtitleOverlay: View {
     @ObservedObject var feed: SubtitleFeed
     /// Lift text above the controls while they are showing.
     var bottomInset: CGFloat
+    var appearance = SubtitleAppearance()
 
     var body: some View {
         // Redraws only when the set of cues on screen changes, not on every clock tick.
         if !feed.visible.isEmpty {
-            SubtitleLayer(cues: feed.visible, bottomInset: bottomInset)
+            SubtitleLayer(cues: feed.visible, bottomInset: bottomInset, appearance: appearance)
+        }
+    }
+}
+
+/// How text subtitles are drawn: the reader's size, colour and backing.
+struct SubtitleAppearance: Equatable {
+    var scale: Double = 1
+    var style: SubtitleStyle = .outline
+    var color: SubtitleColor = .white
+
+    var foreground: Color {
+        switch color {
+        case .white: return .white
+        case .yellow: return Color(red: 1, green: 0.92, blue: 0.3)
+        case .cyan: return Color(red: 0.55, green: 0.95, blue: 1)
         }
     }
 }
@@ -19,6 +35,7 @@ struct SubtitleOverlay: View {
 private struct SubtitleLayer: View {
     let cues: [SubtitleCue]
     var bottomInset: CGFloat
+    var appearance: SubtitleAppearance
 
     var body: some View {
         GeometryReader { proxy in
@@ -82,13 +99,10 @@ private struct SubtitleLayer: View {
                 EmptyView()
             }
         }
-        .font(.system(size: size, weight: .semibold))
-        .foregroundStyle(.white)
+        .font(.system(size: size * appearance.scale, weight: .semibold))
+        .foregroundStyle(appearance.foreground)
         .multilineTextAlignment(.center)
-        // A soft outline reads on any picture, bright or dark.
-        .shadow(color: .black, radius: 0.5, x: 0, y: 0)
-        .shadow(color: .black.opacity(0.9), radius: 2, x: 0, y: 1)
-        .shadow(color: .black.opacity(0.6), radius: 6)
+        .modifier(SubtitleBacking(style: appearance.style))
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -127,5 +141,26 @@ private struct SubtitleLayer: View {
             .resizable()
             .frame(width: max(1, frame.width), height: max(1, frame.height))
             .position(x: frame.midX, y: frame.midY)
+    }
+}
+
+private struct SubtitleBacking: ViewModifier {
+    let style: SubtitleStyle
+
+    func body(content: Content) -> some View {
+        switch style {
+        case .outline:
+            // A soft outline reads on any picture, bright or dark.
+            content
+                .shadow(color: .black, radius: 0.5, x: 0, y: 0)
+                .shadow(color: .black.opacity(0.9), radius: 2, x: 0, y: 1)
+                .shadow(color: .black.opacity(0.6), radius: 6)
+        case .shadow:
+            content.shadow(color: .black.opacity(0.85), radius: 3, x: 1.5, y: 2)
+        case .box:
+            content
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
     }
 }

@@ -58,7 +58,7 @@ struct MediaDetail: Hashable {
 }
 
 /// What the player is asked to play: a title, and an episode for series.
-struct PlaybackTarget: Hashable, Identifiable {
+struct PlaybackTarget: Hashable, Identifiable, Codable {
     var item: MediaItem
     var episode: Episode?
 
