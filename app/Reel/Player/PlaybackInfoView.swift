@@ -7,33 +7,34 @@ import AetherEngine
 /// now. A badge alone cannot answer "is HDR working", because a source can be HDR while the route
 /// to the panel is not.
 ///
-/// Observes the engine directly. That re-renders on every engine publish, which is fine for a panel
-/// that is only alive while someone is reading it; the playback clock is not part of it.
+/// Reads the engine once a second instead of observing it. Observing would redraw on every one of
+/// the engine's many internal publications, and the display check is a query to the system, so
+/// both are done once per tick.
 struct PlaybackInfoView: View {
-    @ObservedObject var engine: AetherEngine
-    @ObservedObject var diagnostics: EngineDiagnostics
+    let engine: AetherEngine
     @State private var screen: UIScreen?
 
-    init(engine: AetherEngine) {
-        self.engine = engine
-        self.diagnostics = engine.diagnostics
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            content(headroom: screen?.currentEDRHeadroom ?? 1,
+                    display: AetherEngine.displayCapabilities)
+        }
+        .background(ScreenReader { screen = $0 }.frame(width: 0, height: 0))
     }
 
-    var body: some View {
+    @ViewBuilder
+    private func content(headroom: CGFloat, display: DisplayCapabilities) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                let headroom = screen?.currentEDRHeadroom ?? 1
-                verdict(headroom: headroom)
-                section("Display") {
-                    line("Can show HDR", yesNo(AetherEngine.displayCapabilities.supportsHDR))
-                    line("Dolby Vision", yesNo(AetherEngine.displayCapabilities.supportsDolbyVision))
-                    line("Highlight boost now", Self.headroomText(headroom))
-                    if let potential = screen?.potentialEDRHeadroom, potential > 1 {
-                        line("Highlight boost max", Self.headroomText(potential))
-                    }
-                    if ProcessInfo.processInfo.isLowPowerModeEnabled {
-                        line("Low Power Mode", "On")
-                    }
+            verdict(headroom: headroom, display: display)
+            section("Display") {
+                line("Can show HDR", yesNo(display.supportsHDR))
+                line("Dolby Vision", yesNo(display.supportsDolbyVision))
+                line("Highlight boost now", Self.headroomText(headroom))
+                if let potential = screen?.potentialEDRHeadroom, potential > 1 {
+                    line("Highlight boost max", Self.headroomText(potential))
+                }
+                if ProcessInfo.processInfo.isLowPowerModeEnabled {
+                    line("Low Power Mode", "On")
                 }
             }
 
@@ -66,7 +67,7 @@ struct PlaybackInfoView: View {
                 line("Delivery", Self.deliveryName(engine.audioDelivery))
             }
 
-            if let live = diagnostics.liveTelemetry {
+            if let live = engine.liveTelemetry {
                 section("Live") {
                     if let fps = live.observedFps { line("Frames shown", String(format: "%.1f fps", fps)) }
                     if let dropped = live.droppedFrameCount { line("Dropped frames", "\(dropped)") }
@@ -75,7 +76,6 @@ struct PlaybackInfoView: View {
                 }
             }
         }
-        .background(ScreenReader { screen = $0 }.frame(width: 0, height: 0))
     }
 
     // MARK: Verdict
@@ -83,8 +83,8 @@ struct PlaybackInfoView: View {
     private enum Status { case on, partial, off }
 
     @ViewBuilder
-    private func verdict(headroom: CGFloat) -> some View {
-        let (status, title, detail) = assess(headroom: headroom)
+    private func verdict(headroom: CGFloat, display: DisplayCapabilities) -> some View {
+        let (status, title, detail) = assess(headroom: headroom, display: display)
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: status == .on ? "sun.max.fill" : status == .partial ? "sun.haze.fill" : "sun.min")
                 .font(.title2)
@@ -101,7 +101,7 @@ struct PlaybackInfoView: View {
         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private func assess(headroom: CGFloat) -> (Status, String, String) {
+    private func assess(headroom: CGFloat, display: DisplayCapabilities) -> (Status, String, String) {
         let source = engine.sourceVideoFormat
         let presented = engine.videoFormat
         let boosting = headroom > 1.05
@@ -112,7 +112,7 @@ struct PlaybackInfoView: View {
             return (.off, "This source is SDR",
                     "The file itself has no HDR. Choose a source tagged HDR, HDR10+ or DV in Sources.")
         }
-        if !AetherEngine.displayCapabilities.supportsHDR || presented == .sdr {
+        if !display.supportsHDR || presented == .sdr {
             return (.off, "HDR source, shown as SDR",
                     "This screen or the current route (AirPlay, an external display) can't show HDR, so the picture is mapped to SDR.")
         }

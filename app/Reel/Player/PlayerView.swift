@@ -30,7 +30,7 @@ struct PlayerView: View {
                     .transition(.opacity)
             }
 
-            SubtitleOverlay(model: model, bottomInset: controlsVisible ? 150 : 36)
+            SubtitleOverlay(feed: model.subtitles, bottomInset: controlsVisible ? 150 : 36)
 
             // Owns the taps above the video: one shows or hides the controls, two toggle fill.
             Color.clear

@@ -4,28 +4,24 @@ import AetherEngine
 /// Draws the engine's subtitle cues. AetherEngine decodes every format (SRT, ASS, WebVTT, PGS, DVB)
 /// into cues and leaves drawing to the host, timed against `clock.sourceTime`.
 struct SubtitleOverlay: View {
-    @ObservedObject var model: PlayerModel
+    @ObservedObject var feed: SubtitleFeed
     /// Lift text above the controls while they are showing.
     var bottomInset: CGFloat
 
     var body: some View {
-        // With no subtitle track on there are no cues, and nothing here follows the clock.
-        if !model.cues.isEmpty {
-            SubtitleLayer(cues: model.cues, time: model.time, bottomInset: bottomInset)
+        // Redraws only when the set of cues on screen changes, not on every clock tick.
+        if !feed.visible.isEmpty {
+            SubtitleLayer(cues: feed.visible, bottomInset: bottomInset)
         }
     }
 }
 
 private struct SubtitleLayer: View {
     let cues: [SubtitleCue]
-    @ObservedObject var time: PlaybackTime
     var bottomInset: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
-            // Cue times are on the source axis, so they are compared with sourceTime.
-            let now = time.sourceTime
-            let cues = self.cues.filter { now >= $0.startTime && now <= $0.endTime }
             ZStack {
                 ForEach(cues) { cue in
                     if case let .image(image) = cue.body {

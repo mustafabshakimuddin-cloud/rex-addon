@@ -18,13 +18,41 @@ enum EngineHost {
     }()
 }
 
-/// The playback clock, kept apart from PlayerModel: it ticks about ten times a second, and only the
-/// scrubber, the time labels and the subtitle layer should redraw on each tick, not the whole player.
+/// The position the scrubber shows, kept apart from PlayerModel: the engine's clock ticks ten
+/// times a second, and only the scrubber and its time labels should redraw on a tick.
 @MainActor
 final class PlaybackTime: ObservableObject {
     @Published fileprivate(set) var currentTime: Double = 0
-    @Published fileprivate(set) var sourceTime: Double = 0
+    /// Published in whole-second steps: the buffered bar is a few points wide per minute of film.
     @Published fileprivate(set) var buffered: Double = 0
+}
+
+/// The subtitle cues on screen now. The engine republishes its whole cue list on every subtitle
+/// drain tick (twice a second) and the source clock ten times a second; this turns both into one
+/// publication each time the visible set actually changes, which is a few times a minute.
+@MainActor
+final class SubtitleFeed: ObservableObject {
+    @Published private(set) var visible: [SubtitleCue] = []
+    private var cues: [SubtitleCue] = []
+    private var now: Double = 0
+
+    fileprivate func update(cues: [SubtitleCue]) {
+        self.cues = cues
+        refresh()
+    }
+
+    fileprivate func update(time: Double) {
+        now = time
+        refresh()
+    }
+
+    private func refresh() {
+        let next = cues.isEmpty ? [] : cues.filter { now >= $0.startTime && now <= $0.endTime }
+        guard next.count != visible.count
+            || zip(next, visible).contains(where: { $0.id != $1.id || $0.startTime != $1.startTime || $0.endTime != $1.endTime })
+        else { return }
+        visible = next
+    }
 }
 
 /// Mirrors the engine's published state for the player UI and drives a playback session.
@@ -36,12 +64,12 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var phase: PlaybackPhase = .idle
     @Published private(set) var duration: Double = 0
     let time = PlaybackTime()
+    let subtitles = SubtitleFeed()
     var currentTime: Double { time.currentTime }
     @Published private(set) var audioTracks: [TrackInfo] = []
     @Published private(set) var subtitleTracks: [TrackInfo] = []
     @Published private(set) var activeAudio: Int?
     @Published private(set) var activeSubtitle: Int?
-    @Published private(set) var cues: [SubtitleCue] = []
     @Published private(set) var videoFormat: VideoFormat = .sdr
     @Published private(set) var hasFirstFrame = false
     @Published private(set) var errorMessage: String?
@@ -62,18 +90,24 @@ final class PlayerModel: ObservableObject {
             errorMessage = "The video engine couldn't start on this device."
             return
         }
-        engine.$state.sink { [weak self] value in self?.handle(state: value) }.store(in: &bag)
-        engine.$playbackPhase.sink { [weak self] in self?.phase = $0 }.store(in: &bag)
-        engine.$duration.sink { [weak self] in self?.duration = $0 }.store(in: &bag)
-        engine.$audioTracks.sink { [weak self] in self?.audioTracks = $0 }.store(in: &bag)
-        engine.$subtitleTracks.sink { [weak self] in self?.subtitleTracks = $0 }.store(in: &bag)
-        engine.$activeAudioTrackIndex.sink { [weak self] in self?.activeAudio = $0 }.store(in: &bag)
-        engine.$activeSubtitleTrackIndex.sink { [weak self] in self?.activeSubtitle = $0 }.store(in: &bag)
-        engine.$subtitleCues.sink { [weak self] in self?.cues = $0 }.store(in: &bag)
-        engine.$videoFormat.sink { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
-        engine.$hasFirstFrameReadyForDisplay.sink { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
-        engine.clock.$sourceTime.removeDuplicates().sink { [weak self] in self?.time.sourceTime = $0 }.store(in: &bag)
-        engine.clock.$bufferedPosition.removeDuplicates().sink { [weak self] in self?.time.buffered = $0 }.store(in: &bag)
+        // Every assignment to a @Published property redraws the whole player, glass and all, even
+        // when the value is the one it already held, so nothing reaches it unchanged.
+        engine.$state.removeDuplicates().sink { [weak self] value in self?.handle(state: value) }.store(in: &bag)
+        engine.$playbackPhase.removeDuplicates().sink { [weak self] in self?.phase = $0 }.store(in: &bag)
+        engine.$duration.removeDuplicates().sink { [weak self] in self?.duration = $0 }.store(in: &bag)
+        engine.$audioTracks.removeDuplicates().sink { [weak self] in self?.audioTracks = $0 }.store(in: &bag)
+        engine.$subtitleTracks.removeDuplicates().sink { [weak self] in self?.subtitleTracks = $0 }.store(in: &bag)
+        engine.$activeAudioTrackIndex.removeDuplicates().sink { [weak self] in self?.activeAudio = $0 }.store(in: &bag)
+        engine.$activeSubtitleTrackIndex.removeDuplicates().sink { [weak self] in self?.activeSubtitle = $0 }.store(in: &bag)
+        engine.$videoFormat.removeDuplicates().sink { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
+        engine.$hasFirstFrameReadyForDisplay.removeDuplicates().sink { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
+        // Cues and the source clock go to the subtitle feed only, never to the player.
+        engine.$subtitleCues.sink { [weak self] in self?.subtitles.update(cues: $0) }.store(in: &bag)
+        engine.clock.$sourceTime.removeDuplicates().sink { [weak self] in self?.subtitles.update(time: $0) }.store(in: &bag)
+        engine.clock.$bufferedPosition
+            .map { $0.isFinite ? $0.rounded(.down) : 0 }
+            .removeDuplicates()
+            .sink { [weak self] in self?.time.buffered = $0 }.store(in: &bag)
         engine.clock.$currentTime.removeDuplicates().sink { [weak self] value in
             guard let self else { return }
             self.time.currentTime = value
@@ -212,8 +246,12 @@ final class PictureInPicture: NSObject, ObservableObject, AVPictureInPictureCont
         pip?.canStartPictureInPictureAutomaticallyFromInline = true
         controller = pip
         possibleObservation = pip?.publisher(for: \.isPictureInPicturePossible)
+            .removeDuplicates()
             .receive(on: RunLoop.main)
-            .sink { [weak self] in self?.isPossible = $0 }
+            .sink { [weak self] value in
+                guard let self, self.isPossible != value else { return }
+                self.isPossible = value
+            }
     }
 
     func toggle() {
