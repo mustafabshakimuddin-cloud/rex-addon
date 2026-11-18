@@ -114,8 +114,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: Reel-unsigned-ipa
-      # Each build gets a permanent release (v0.1.N) so a store's download link never changes
-      # under it, plus the rolling "latest" release that holds only source.json.
+      # Each build gets its own release (v0.1.N), which replaces the previous one, plus the rolling
+      # "latest" release that holds only source.json.
       # SideStore / AltStore / Feather add the source by:
       #   https://github.com/<owner>/<repo>/releases/download/latest/source.json
       - name: Publish
@@ -133,6 +133,12 @@ jobs:
           # Marked as GitHub's latest release, so .../releases/latest/download/Reel.ipa always
           # names the newest build.
           gh release create "$TAG" Reel.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
+          # Only the newest build is kept: stores that list a repository's releases show every
+          # one, and the source lists just this version, so older releases are deleted with
+          # their tags once the new one is up.
+          for OLD in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$TAG"); do
+            gh release delete "$OLD" --yes --cleanup-tag || true
+          done
           rm -f previous.json
           gh release download latest -p source.json -O previous.json 2>/dev/null || true
           python3 app/tools/make_source.py --previous previous.json --out source.json \

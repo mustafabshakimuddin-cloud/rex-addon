@@ -6,8 +6,8 @@ Run by the release job after each build on main:
     make_source.py --previous old.json --out source.json --version 0.1.42 --build 42 \
         --ipa Reel.ipa --download-url https://…/Reel.ipa --notes "…"
 
-The new version goes first and the last few are kept, so a store can still offer the one
-before. `--previous` may name a file that does not exist (the first release).
+Only the newest version is listed: the release job deletes older releases, so their links
+would no longer work. `--previous` may name a file that does not exist (the first release).
 """
 import argparse
 import datetime
@@ -17,7 +17,8 @@ import os
 
 REPO = "https://github.com/mustafabshakimuddin-cloud/rex-addon"
 RAW = "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main"
-KEEP = 8
+# The release job deletes older releases, so only the newest download link stays valid.
+KEEP = 1
 TINT = "FF4FA3"
 
 DESCRIPTION = """Reel finds films and series in Cinemeta's catalogue and plays them through your debrid service, with sources from Torrentio and any Stremio addons you add.
