@@ -9,13 +9,25 @@ service. "Reel" is a working name: change `AppConfig.name` and `CFBundleDisplayN
 - **Sources**: [Torrentio](https://torrentio.strem.fun), using your debrid service (Real-Debrid,
   AllDebrid, Premiumize, TorBox, Debrid-Link, EasyDebrid, Offcloud, Put.io). Without one there is
   nothing playable: torrents themselves are never downloaded on the device.
-- **Player**: VLCKit, so MKV, HEVC, AV1, DTS/TrueHD audio and embedded subtitles play.
+- **Player**: AetherEngine (FFmpeg demuxing, Apple's hardware decoders), so MKV, HEVC, AV1, Dolby Vision, HDR10+, Atmos and embedded subtitles play.
 
 ## Install
 
-CI builds an unsigned `.ipa` on every push (Actions → *iOS app* → artifact `Reel-unsigned-ipa`).
-Install it with **AltStore** or **Sideloadly**, which sign it with your Apple ID. With a free Apple
-ID the signature lasts 7 days; reinstall or refresh in AltStore before then.
+**SideStore, AltStore or Feather (recommended).** Add this source, then install Reel from it:
+
+```
+https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/download/latest/source.json
+```
+
+The store shows each new build as an update. Every push to `main` publishes one: a permanent
+release `v0.1.N` holding that build's `.ipa`, and the rolling `latest` release holding the newest
+`.ipa` and `source.json`. `tools/make_source.py` writes the source and keeps the last few versions.
+
+**By hand.** Download `Reel.ipa` from the
+[latest release](https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/tag/latest) and
+install it with Sideloadly.
+
+With a free Apple ID a signature lasts 7 days; SideStore and AltStore refresh it in the background.
 
 ## First run
 

@@ -51,6 +51,8 @@ jobs:
             -derivedDataPath build \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="0.1.${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
             | tee build.log | grep -E "error:|warning: .*deprecated|\*\* BUILD" || true
           grep -q "\*\* BUILD SUCCEEDED \*\*" build.log
 
@@ -101,28 +103,45 @@ jobs:
   # permanent direct link that needs no GitHub sign-in and opens straight in AltStore/Sideloadly:
   #   https://github.com/<owner>/rex-addon/releases/download/latest/Reel.ipa
   release:
-    name: Publish to the "latest" release
+    name: Publish the release and the SideStore source
     needs: build
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: Reel-unsigned-ipa
+      # Each build gets a permanent release (v0.1.N) so a store's download link never changes
+      # under it, plus the rolling "latest" release that holds the newest IPA and source.json.
+      # SideStore / AltStore / Feather add the source by:
+      #   https://github.com/<owner>/<repo>/releases/download/latest/source.json
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          BUILD: ${{ github.run_number }}
         run: |
+          VERSION="0.1.$BUILD"
+          TAG="v$VERSION"
           mv Reel-unsigned.ipa Reel.ipa
-          NOTES="Unsigned build of ${GITHUB_SHA::7} ($(date -u +'%Y-%m-%d %H:%M UTC')). Install with AltStore or Sideloadly."
+          SUMMARY=$(printf '%s\n' "$COMMIT_MESSAGE" | head -1)
+          NOTES="$SUMMARY"$'\n\n'"Unsigned build of ${GITHUB_SHA::7}. Install with SideStore, AltStore or Sideloadly."
+          gh release create "$TAG" Reel.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest=false
+          rm -f previous.json
+          gh release download latest -p source.json -O previous.json 2>/dev/null || true
+          python3 app/tools/make_source.py --previous previous.json --out source.json \
+            --version "$VERSION" --build "$BUILD" --ipa Reel.ipa \
+            --download-url "https://github.com/$GH_REPO/releases/download/$TAG/Reel.ipa" --notes "$SUMMARY"
+          LATEST_NOTES="Newest build: $VERSION. $SUMMARY"$'\n\n'"Add this source to SideStore or AltStore: https://github.com/$GH_REPO/releases/download/latest/source.json"
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest Reel.ipa --clobber
-            gh release edit latest --notes "$NOTES"
+            gh release upload latest Reel.ipa source.json --clobber
+            gh release edit latest --notes "$LATEST_NOTES"
           else
-            gh release create latest Reel.ipa --title "Reel (latest build)" --notes "$NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create latest Reel.ipa source.json --title "Reel (latest build)" --notes "$LATEST_NOTES" --prerelease --target "$GITHUB_SHA"
           fi
 
   # Launches the app in the iPhone Duo and iPhone 17 simulators and screenshots it, so a launch
@@ -147,19 +166,6 @@ jobs:
 
       - name: Install XcodeGen
         run: brew install xcodegen
-
-      - name: Print iPhone Duo API signatures
-        continue-on-error: true
-        run: |
-          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "SDK: $SDK ($(xcrun --sdk iphoneos --show-sdk-version))"
-          for F in $(find "$SDK/System/Library/Frameworks/SwiftUI.framework" "$SDK/System/Library/Frameworks/SwiftUICore.framework" -name "arm64e-apple-ios.swiftinterface" 2>/dev/null); do
-            echo "== $F"
-            grep -nE "reservedRegions|ReservedRegion|onHingeChange|DeviceHinge|backgroundExtensionEffect|toolbarVerticalBehavior|ArrangementView|arrangementViewStyle|toolbarVerticalEdge" "$F" | grep -vE "^\s*//" | head -80 || true
-          done
-          echo "== ReservedRegion type"
-          grep -rhn -A25 "public struct ReservedRegion\b\|public struct ReservedRegion " "$SDK/System/Library/Frameworks/SwiftUI.framework" "$SDK/System/Library/Frameworks/SwiftUICore.framework" 2>/dev/null | head -80 || true
-          grep -rhn -B2 -A12 "func reservedRegions" "$SDK/System/Library/Frameworks/SwiftUI.framework" "$SDK/System/Library/Frameworks/SwiftUICore.framework" 2>/dev/null | head -80 || true
 
       - name: Build for simulator
         run: |
