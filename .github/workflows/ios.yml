@@ -115,7 +115,7 @@ jobs:
         with:
           name: Reel-unsigned-ipa
       # Each build gets a permanent release (v0.1.N) so a store's download link never changes
-      # under it, plus the rolling "latest" release that holds the newest IPA and source.json.
+      # under it, plus the rolling "latest" release that holds only source.json.
       # SideStore / AltStore / Feather add the source by:
       #   https://github.com/<owner>/<repo>/releases/download/latest/source.json
       - name: Publish
@@ -130,18 +130,23 @@ jobs:
           mv Reel-unsigned.ipa Reel.ipa
           SUMMARY=$(printf '%s\n' "$COMMIT_MESSAGE" | head -1)
           NOTES="$SUMMARY"$'\n\n'"Unsigned build of ${GITHUB_SHA::7}. Install with SideStore, AltStore or Sideloadly."
-          gh release create "$TAG" Reel.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest=false
+          # Marked as GitHub's latest release, so .../releases/latest/download/Reel.ipa always
+          # names the newest build.
+          gh release create "$TAG" Reel.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
           rm -f previous.json
           gh release download latest -p source.json -O previous.json 2>/dev/null || true
           python3 app/tools/make_source.py --previous previous.json --out source.json \
             --version "$VERSION" --build "$BUILD" --ipa Reel.ipa \
             --download-url "https://github.com/$GH_REPO/releases/download/$TAG/Reel.ipa" --notes "$SUMMARY"
-          LATEST_NOTES="Newest build: $VERSION. $SUMMARY"$'\n\n'"Add this source to SideStore or AltStore: https://github.com/$GH_REPO/releases/download/latest/source.json"
+          LATEST_NOTES="The SideStore / AltStore source for Reel. Newest build: $VERSION."$'\n\n'"Add this source: https://github.com/$GH_REPO/releases/download/latest/source.json"$'\n\n'"The app itself is in each versioned release (v0.1.N)."
+          # The "latest" tag holds only source.json. Stores that read a repository's releases
+          # directly list every release with an .ipa, so a second copy here showed each build twice.
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest Reel.ipa source.json --clobber
-            gh release edit latest --notes "$LATEST_NOTES"
+            gh release delete-asset latest Reel.ipa -y 2>/dev/null || true
+            gh release upload latest source.json --clobber
+            gh release edit latest --title "Reel source" --notes "$LATEST_NOTES" --prerelease
           else
-            gh release create latest Reel.ipa source.json --title "Reel (latest build)" --notes "$LATEST_NOTES" --prerelease --target "$GITHUB_SHA"
+            gh release create latest source.json --title "Reel source" --notes "$LATEST_NOTES" --prerelease --target "$GITHUB_SHA"
           fi
 
   # Launches the app in the iPhone Duo and iPhone 17 simulators and screenshots it, so a launch

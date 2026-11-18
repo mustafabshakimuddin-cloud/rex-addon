@@ -20,11 +20,11 @@ https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/download/latest/
 ```
 
 The store shows each new build as an update. Every push to `main` publishes one: a permanent
-release `v0.1.N` holding that build's `.ipa`, and the rolling `latest` release holding the newest
-`.ipa` and `source.json`. `tools/make_source.py` writes the source and keeps the last few versions.
+release `v0.1.N` holding that build's `.ipa`, and the rolling `latest` release holding only
+`source.json` (so stores that list a repository's releases show each build once). `tools/make_source.py` writes the source and keeps the last few versions.
 
-**By hand.** Download `Reel.ipa` from the
-[latest release](https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/tag/latest) and
+**By hand.** Download the newest build,
+<https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/latest/download/Reel.ipa>, and
 install it with Sideloadly.
 
 With a free Apple ID a signature lasts 7 days; SideStore and AltStore refresh it in the background.
