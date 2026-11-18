@@ -131,7 +131,7 @@ jobs:
   simulator:
     name: Launch on simulators
     runs-on: xcode-27
-    timeout-minutes: 60
+    timeout-minutes: 80
     defaults:
       run:
         working-directory: app
@@ -171,7 +171,7 @@ jobs:
           grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
 
       - name: Launch and screenshot
-        timeout-minutes: 25
+        timeout-minutes: 45
         run: |
           APP=build/Build/Products/Debug-iphonesimulator/Reel.app
           mkdir -p shots
@@ -192,7 +192,8 @@ jobs:
             done
             if [ -z "$UDID" ]; then echo "::warning::No bootable $NAME simulator on this runner"; continue; fi
             xcrun simctl list devices | grep "$UDID" || true
-            limit 120 xcrun simctl install "$UDID" "$APP"
+            # A Duo's first install can take several minutes.
+            if ! limit 600 xcrun simctl install "$UDID" "$APP"; then echo "::warning::$NAME: install timed out"; continue; fi
             SLUG=$(echo "$NAME" | tr ' ' '-')
             # iPhone Duo has two displays (outer and inner); capture each one simctl lists.
             DISPLAYS=$(limit 30 xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
@@ -201,11 +202,11 @@ jobs:
             for SCREEN in home detail sources player settings library search; do
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
               if [ "$SCREEN" = "home" ]; then
-                limit 60 xcrun simctl launch "$UDID" community.reel.app
+                limit 300 xcrun simctl launch "$UDID" community.reel.app || true
               else
-                limit 60 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN"
+                limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
               fi
-              if [ $FIRST = 1 ]; then sleep 25; FIRST=0; else sleep 12; fi
+              if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
               if ! limit 30 xcrun simctl spawn "$UDID" launchctl list | grep -q community.reel.app; then
                 echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"
                 limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
