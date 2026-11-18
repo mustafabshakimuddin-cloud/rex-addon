@@ -451,7 +451,8 @@ struct PlayerView: View {
         controlsVisible = true
         hideTask = Task {
             try? await Task.sleep(nanoseconds: 4_000_000_000)
-            guard !Task.isCancelled, model.isPlaying, scrubbing == nil, panel == nil else { return }
+            guard !Task.isCancelled, model.isPlaying, scrubbing == nil, panel == nil,
+                  !ProcessInfo.processInfo.arguments.contains("-ReelShot") else { return }
             controlsVisible = false
         }
     }

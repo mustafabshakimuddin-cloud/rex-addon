@@ -28,6 +28,7 @@ struct DetailView: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var model = DetailModel()
     @State private var width: CGFloat = 390
+    @State private var height: CGFloat = 844
     @State private var expandedOverview = false
 
     private var shown: MediaItem { model.detail?.item ?? item }
@@ -52,7 +53,7 @@ struct DetailView: View {
             }
             .padding(.bottom, 50)
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
         .ignoresSafeArea(edges: .top)
         .background(Theme.Backdrop())
         .navigationTitle(shown.name)
@@ -75,12 +76,19 @@ struct DetailView: View {
 
     // MARK: Header
 
-    private var headerHeight: CGFloat { wide ? min(max(width * 0.42, 380), 560) : min(width * 1.05, 520) }
+    private var headerHeight: CGFloat {
+        let natural = wide ? min(max(width * 0.42, 380), 560) : min(width * 1.05, 520)
+        // The Duo's outer display is short; leave room to see the overview below the header.
+        return min(natural, height * 0.62)
+    }
 
     private var header: some View {
         ZStack(alignment: .bottomLeading) {
             RemoteImage(url: shown.background ?? shown.poster, targetWidth: width * 0.75)
-                .frame(width: width, height: headerHeight)
+                // Fill whatever width the column gets rather than the measured one: a scroll
+                // view's frame runs under the outer display's status column while its content
+                // is inset from it, so forcing the measured width pushed the page off the left.
+                .frame(maxWidth: .infinity, minHeight: headerHeight, maxHeight: headerHeight)
                 .clipped()
                 // On iPhone Duo's outer display (and beside a side bar) the picture continues under
                 // the status column instead of stopping short of the edge.

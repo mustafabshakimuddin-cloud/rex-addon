@@ -199,7 +199,7 @@ jobs:
             DISPLAYS=$(limit 30 xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
             [ -z "$DISPLAYS" ] && DISPLAYS="default"
             FIRST=1
-            for SCREEN in home detail sources player settings library search; do
+            for SCREEN in home detail sources player movies settings library; do
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
               if [ "$SCREEN" = "home" ]; then
                 limit 300 xcrun simctl launch "$UDID" community.reel.app || true
