@@ -380,7 +380,7 @@ struct PlayerView: View {
 
             HStack(spacing: 10) {
                 barButton("Sources", "list.bullet.rectangle") { playback.switchSource(for: session.target) }
-                barButton("Audio & Subtitles", "waveform.and.captions") { openPanel(.audio) }
+                barButton("Audio & Subtitles", "captions.bubble") { openPanel(.audio) }
                 barButton(Self.rateLabel(model.rate), "gauge.with.dots.needle.67percent") { openPanel(.speed) }
                 Spacer(minLength: 0)
                 Button {

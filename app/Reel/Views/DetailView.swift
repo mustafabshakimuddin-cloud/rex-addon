@@ -82,37 +82,45 @@ struct DetailView: View {
         return min(natural, height * 0.62)
     }
 
+    /// A fixed-height box that takes exactly the width it is offered. The picture and gradients are
+    /// its background, so nothing in them can widen the page: an image in fill mode reports its
+    /// natural width, and the extension effect reaches into the safe area, and either one inside a
+    /// ZStack widened the whole scroll view and pushed the page off the left edge.
     private var header: some View {
-        ZStack(alignment: .bottomLeading) {
-            RemoteImage(url: shown.background ?? shown.poster, targetWidth: width * 0.75)
-                // Fill whatever width the column gets rather than the measured one: a scroll
-                // view's frame runs under the outer display's status column while its content
-                // is inset from it, so forcing the measured width pushed the page off the left.
-                .frame(maxWidth: .infinity, minHeight: headerHeight, maxHeight: headerHeight)
-                .clipped()
-                // On iPhone Duo's outer display (and beside a side bar) the picture continues under
-                // the status column instead of stopping short of the edge.
-                .backgroundExtensionEffect()
-            LinearGradient(stops: [
-                .init(color: .clear, location: 0.25),
-                .init(color: Theme.background.opacity(0.75), location: 0.7),
-                .init(color: Theme.background, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            if wide {
-                LinearGradient(colors: [Theme.background.opacity(0.85), .clear], startPoint: .leading, endPoint: .center)
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: headerHeight)
+            .background {
+                RemoteImage(url: shown.background ?? shown.poster, targetWidth: width * 0.75)
+                    .clipped()
+                    // On iPhone Duo's outer display (and beside a side bar) the picture continues
+                    // under the status column instead of stopping short of the edge.
+                    .backgroundExtensionEffect()
             }
-            VStack(alignment: .leading, spacing: 14) {
-                TitleLogo(item: shown, maxHeight: wide ? 120 : 90)
-                    .frame(maxWidth: wide ? 460 : width * 0.8, alignment: .leading)
-                metaLine
-                actionButtons
+            .overlay {
+                ZStack {
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0.25),
+                        .init(color: Theme.background.opacity(0.75), location: 0.7),
+                        .init(color: Theme.background, location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                    if wide {
+                        LinearGradient(colors: [Theme.background.opacity(0.85), .clear], startPoint: .leading, endPoint: .center)
+                    }
+                }
+                .allowsHitTesting(false)
             }
-            .padding(.horizontal, wide ? 48 : 20)
-            .padding(.bottom, 8)
-            .frame(maxWidth: 1100, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(height: headerHeight)
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 14) {
+                    TitleLogo(item: shown, maxHeight: wide ? 120 : 90)
+                        .frame(maxWidth: wide ? 460 : 300, alignment: .leading)
+                    metaLine
+                    actionButtons
+                }
+                .padding(.horizontal, wide ? 48 : 20)
+                .padding(.bottom, 8)
+                .frame(maxWidth: 1100, alignment: .leading)
+            }
     }
 
     private var metaLine: some View {
