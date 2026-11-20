@@ -9,6 +9,7 @@ struct PlayerView: View {
     @EnvironmentObject private var playback: PlaybackCenter
     @EnvironmentObject private var trakt: TraktStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model = PlayerModel()
     @State private var controlsVisible = true
     @State private var panel: OptionsPanel.Tab?
@@ -51,6 +52,12 @@ struct PlayerView: View {
         .onChange(of: model.hasFirstFrame) { _, ready in if ready { started() } }
         .onChange(of: model.errorMessage) { _, message in if let message { failed(message) } }
         .onChange(of: model.stallCount) { _, _ in playback.playerStalled(session) }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            model.restoreAfterBackground()
+            controlsVisible = true
+            scheduleHide()
+        }
     }
 
     // MARK: Layouts
@@ -218,7 +225,10 @@ struct PlayerView: View {
     }
 
     private func failed(_ message: String) {
-        guard !model.hasFirstFrame, !handledFailure else { return }
+        // Only a source that never showed a picture counts as failing to open. A stream that
+        // played and then failed (a reopen after the background, an expired link) gets the error
+        // card, not a silent switch to another source and a mark against this one.
+        guard !model.hasFirstFrame, !reportedStart, !handledFailure else { return }
         handledFailure = true
         if playback.playerFailed(session, reason: message, position: nil) {
             model.stop()

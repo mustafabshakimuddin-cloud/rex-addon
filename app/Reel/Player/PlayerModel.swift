@@ -96,6 +96,7 @@ final class PlayerModel: ObservableObject {
     let pip = PictureInPicture()
     private var bag = Set<AnyCancellable>()
     private var started = false
+    private var restoring = false
     private var lastSaved: Double = -100
     private var onProgress: ((Double, Double) -> Void)?
 
@@ -188,7 +189,43 @@ final class PlayerModel: ObservableObject {
         }
     }
 
-    func togglePlay() { engine?.togglePlayPause() }
+    func togglePlay() {
+        guard let engine else { return }
+        // Play after the stream was released in the background reopens it playing.
+        if engine.needsForegroundVideoRestore {
+            restore(playing: true)
+            return
+        }
+        engine.togglePlayPause()
+    }
+
+    // MARK: Background
+
+    /// A paused video left in the background for more than 15 s is released by the engine to save
+    /// memory, and the engine leaves reopening it to the app. Without this the player came back to
+    /// a spinner over a stream that no longer existed. Called when the scene becomes active again.
+    func restoreAfterBackground() {
+        guard engine?.needsForegroundVideoRestore == true else { return }
+        restore(playing: false)
+    }
+
+    private func restore(playing: Bool) {
+        guard let engine, !restoring else { return }
+        restoring = true
+        Task {
+            defer { restoring = false }
+            do {
+                // The one rebuild where `autoplay` is applied: there is no transport left to keep,
+                // so the app decides. It was paused when the app left, so it comes back paused,
+                // on the same frame, unless Play was what brought it back.
+                try await engine.reloadAtCurrentPosition { $0.autoplay = playing }
+            } catch is CancellationError {
+            } catch {
+                errorMessage = Self.message(for: error)
+            }
+        }
+    }
+
 
     func seek(to seconds: Double) {
         guard let engine, duration > 0 else { return }
