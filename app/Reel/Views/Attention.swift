@@ -36,7 +36,8 @@ struct Attention {
         }
         let fresh = upcoming.newEpisodes(library)
         if !fresh.isEmpty {
-            items.append(Item(id: "episodes.new", title: fresh.count == 1 ? "1 new episode" : "\(fresh.count) new episodes",
+            let count = upcoming.newEpisodeCount(library)
+            items.append(Item(id: "episodes.new", title: count == 1 ? "1 new episode" : "\(count) new episodes",
                               detail: fresh.map(\.item.name).prefix(3).joined(separator: ", "),
                               systemImage: "sparkles.tv", tint: Theme.accent, needsYou: true, action: .calendar))
         }

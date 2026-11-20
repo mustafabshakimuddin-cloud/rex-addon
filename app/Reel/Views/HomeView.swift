@@ -143,13 +143,15 @@ struct HomeView: View {
             }
         case .newEpisodes:
             let fresh = upcoming.newEpisodes(library)
+            let waiting = upcoming.unwatchedNew(library)
             if !fresh.isEmpty {
                 ShelfRow(title: "New Episodes", subtitle: "Aired in the last two weeks", items: fresh) { entry in
+                    let more = (waiting[entry.item.id]?.count ?? 1) - 1
                     Button {
                         playback.play(entry.target, settings: settings, library: library)
                     } label: {
                         BannerCard(item: entry.item, width: metrics.landscape, image: entry.episode.thumbnail ?? entry.item.background,
-                                   eyebrow: "New · \(entry.episode.code)", title: entry.item.name,
+                                   eyebrow: "New · \(entry.episode.code)" + (more > 0 ? " · +\(more) more" : ""), title: entry.item.name,
                                    subtitle: "\(entry.episode.title) · \(entry.date.formatted(.relative(presentation: .named)))")
                     }
                     .buttonStyle(.plain)

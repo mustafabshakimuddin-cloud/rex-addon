@@ -73,14 +73,39 @@ final class UpcomingStore: ObservableObject {
         }
     }
 
-    /// Aired in the last two weeks and not watched yet: what Home calls New Episodes.
-    func newEpisodes(_ library: Library) -> [CalendarEpisode] {
+    /// Episodes aired in the last two weeks that come after the furthest one you have watched or
+    /// started in that series, grouped by series, each in episode order. Marking an episode
+    /// watched also settles every earlier one: you've moved past them.
+    func unwatchedNew(_ library: Library) -> [String: [CalendarEpisode]] {
         let cutoff = Date().addingTimeInterval(-Self.newWindow)
-        var seen = Set<String>()
-        // Newest first, one per series: the latest episode stands for the rest.
-        return episodes.reversed().filter { entry in
-            entry.hasAired && entry.date > cutoff && !library.isWatched(entry.target) && seen.insert(entry.item.id).inserted
+        let recent = episodes.filter { $0.hasAired && $0.date > cutoff }
+        var bySeries: [String: [CalendarEpisode]] = [:]
+        for (seriesID, entries) in Dictionary(grouping: recent, by: \.item.id) {
+            let reached = library.furthestEpisode(inSeries: seriesID)
+            let ahead = entries.filter { entry in
+                let position = (entry.episode.season, entry.episode.number)
+                if let reached, position <= reached { return false }
+                return !library.isWatched(entry.target) && library.progress(for: entry.target) == nil
+            }
+            if !ahead.isEmpty {
+                bySeries[seriesID] = ahead.sorted { ($0.episode.season, $0.episode.number) < ($1.episode.season, $1.episode.number) }
+            }
         }
+        return bySeries
+    }
+
+    /// One card per series: the next new episode to watch, most recently aired series first.
+    func newEpisodes(_ library: Library) -> [CalendarEpisode] {
+        unwatchedNew(library).values.compactMap(\.first).sorted { lhs, rhs in
+            let a = episodes.last { $0.item.id == lhs.item.id && $0.hasAired }?.date ?? lhs.date
+            let b = episodes.last { $0.item.id == rhs.item.id && $0.hasAired }?.date ?? rhs.date
+            return a > b
+        }
+    }
+
+    /// How many new episodes are waiting across every series.
+    func newEpisodeCount(_ library: Library) -> Int {
+        unwatchedNew(library).values.reduce(0) { $0 + $1.count }
     }
 
     var upcoming: [CalendarEpisode] { episodes.filter { !$0.hasAired } }

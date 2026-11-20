@@ -167,6 +167,25 @@ final class Library: ObservableObject {
         scheduleSave()
     }
 
+    /// The furthest regular episode of a series you've finished or started here, or that Trakt
+    /// says you watched, as (season, episode).
+    func furthestEpisode(inSeries seriesID: String) -> (Int, Int)? {
+        var furthest: (Int, Int)?
+        func consider(_ position: (Int, Int)) {
+            guard position.0 > 0 else { return }  // specials don't move you along
+            if furthest.map({ position > $0 }) ?? true { furthest = position }
+        }
+        for entry in progress.values where entry.item.id == seriesID {
+            if let episode = entry.episode { consider((episode.season, episode.number)) }
+        }
+        let prefix = seriesID + ":"
+        for id in externalWatched where id.hasPrefix(prefix) {
+            let parts = id.dropFirst(prefix.count).split(separator: ":")
+            if parts.count == 2, let season = Int(parts[0]), let number = Int(parts[1]) { consider((season, number)) }
+        }
+        return furthest
+    }
+
     /// The episode to offer next: the one after the latest watched, or the first.
     func nextEpisode(in detail: MediaDetail) -> Episode? {
         let regular = detail.episodes.filter { $0.season > 0 }.sorted { ($0.season, $0.number) < ($1.season, $1.number) }
