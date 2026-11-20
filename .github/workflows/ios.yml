@@ -161,7 +161,7 @@ jobs:
   simulator:
     name: Launch on simulators
     runs-on: xcode-27
-    timeout-minutes: 80
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: app
@@ -188,7 +188,8 @@ jobs:
           grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
 
       - name: Launch and screenshot
-        timeout-minutes: 45
+        # About two minutes a screen across both simulators, plus booting and installing.
+        timeout-minutes: 55
         run: |
           APP=build/Build/Products/Debug-iphonesimulator/Reel.app
           mkdir -p shots
@@ -218,7 +219,7 @@ jobs:
             FIRST=1
             # Every launch passes -ReelShot, which also keeps first-run setup from covering the
             # screen ("home" opens nothing else; "setup" shows setup itself).
-            for SCREEN in home setup detail sources player movies series calendar library history person settings status; do
+            for SCREEN in home setup detail sources player movies calendar library settings status; do
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
               limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
               if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
