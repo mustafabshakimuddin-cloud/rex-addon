@@ -131,6 +131,33 @@ struct SourcesSheet: View {
             }
         }
         .task { await model.load(target, playback: playback, query: settings.sourceQuery) }
+        // Rules changed from the sheet's own Pick Rules page: search again with them.
+        .onChange(of: settings.sourceQuery) { _, query in
+            Task { await model.load(target, playback: playback, query: query) }
+        }
+    }
+
+    /// The rules that shaped this list, in a line, with the way to change them.
+    private var rulesSummary: String {
+        var parts: [String] = []
+        if settings.cachedOnly && settings.isDebridConfigured { parts.append("Instant only") }
+        if !settings.excludedQualities.isEmpty {
+            parts.append("Hides " + settings.excludedQualities.map(SettingsView.qualityLabel).joined(separator: ", "))
+        }
+        if settings.maxSizeGB > 0 { parts.append("Up to \(settings.maxSizeGB) GB") }
+        if !settings.providers.isEmpty { parts.append("\(settings.providers.count) providers") }
+        let addons = settings.addons.filter(\.enabled).count
+        if addons > 0 { parts.append("+\(addons) addon\(addons == 1 ? "" : "s")") }
+        return parts.isEmpty ? "No filters" : parts.joined(separator: " · ")
+    }
+
+    private var foundSummary: String {
+        let instant = model.sources.filter(\.isCached).count
+        let addons = Set(model.sources.map(\.addon)).count
+        var text = "\(model.sources.count) found"
+        if settings.isDebridConfigured { text += " · \(instant) instant" }
+        if addons > 1 { text += " · from \(addons) addons" }
+        return text
     }
 
     private var list: some View {
@@ -138,6 +165,18 @@ struct SourcesSheet: View {
             if !settings.isDebridConfigured {
                 Label("Add a debrid service in Settings to play Torrentio's sources.", systemImage: "info.circle")
                     .foregroundStyle(Theme.secondaryText)
+            }
+            Section {
+                NavigationLink {
+                    PickRulesView()
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Label("Pick Rules", systemImage: "slider.horizontal.3").font(.subheadline.weight(.semibold))
+                        Text(rulesSummary).font(.caption).foregroundStyle(Theme.secondaryText).lineLimit(2)
+                    }
+                }
+            } footer: {
+                Text(foundSummary)
             }
             if let pick = recommended, quality == "All", order == .best {
                 Section {

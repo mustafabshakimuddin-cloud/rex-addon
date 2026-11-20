@@ -24,6 +24,7 @@ struct DetailView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
     @EnvironmentObject private var downloads: DownloadStore
+    @EnvironmentObject private var upcoming: UpcomingStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
     @StateObject private var model = DetailModel()
@@ -39,17 +40,20 @@ struct DetailView: View {
             VStack(alignment: .leading, spacing: 26) {
                 header
                 VStack(alignment: .leading, spacing: 26) {
+                    libraryState
                     overview
                     if let detail = model.detail, item.kind == .series, !detail.episodes.isEmpty {
                         episodesSection(detail)
                     }
-                    if let detail = model.detail, !detail.cast.isEmpty { castSection(detail) }
+                    if let detail = model.detail, !detail.cast.isEmpty || !detail.directors.isEmpty { castSection(detail) }
                     if let error = model.error {
                         StateMessage(title: "Couldn't load details", message: error)
                     }
                 }
                 .padding(.horizontal, wide ? 48 : 20)
                 .readableWidth(1100)
+                MoreLikeThis(item: shown)
+                    .readableWidth(1100 + (wide ? 96 : 40))
             }
             .padding(.bottom, 50)
         }
@@ -67,6 +71,7 @@ struct DetailView: View {
                 }
                 .accessibilityLabel(library.isInWatchlist(shown) ? "Remove from My List" : "Add to My List")
             }
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
         }
         .task {
             await model.load(item, library: library)
@@ -207,6 +212,76 @@ struct DetailView: View {
         return "\(verb) \(episode.code)"
     }
 
+    /// Share, IMDb and watched state: what the toolbar's "…" holds.
+    private var moreMenu: some View {
+        Menu {
+            if item.kind == .movie {
+                let target = PlaybackTarget(item: shown)
+                if library.isWatched(target) {
+                    Button { library.markUnwatched(target) } label: { Label("Mark as Unwatched", systemImage: "circle") }
+                } else {
+                    Button { library.markWatched(target) } label: { Label("Mark as Watched", systemImage: "checkmark.circle") }
+                }
+                Button { playback.chooseSource(for: target) } label: { Label("Choose Source", systemImage: "list.bullet.rectangle") }
+            } else if let detail = model.detail {
+                let aired = detail.episodes.filter { $0.season > 0 && $0.hasAired }
+                Button { library.markWatched(aired, of: shown) } label: { Label("Mark All Aired as Watched", systemImage: "checkmark.circle") }
+                Button { library.markUnwatched(detail.episodes) } label: { Label("Mark All as Unwatched", systemImage: "circle") }
+            }
+            Divider()
+            if let imdb = URL(string: "https://www.imdb.com/title/\(shown.id)/") {
+                ShareLink(item: imdb, subject: Text(shown.name)) { Label("Share", systemImage: "square.and.arrow.up") }
+                Link(destination: imdb) { Label("Open in IMDb", systemImage: "arrow.up.right.square") }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .accessibilityLabel("More")
+    }
+
+    /// Where this title stands in your library, at a glance.
+    @ViewBuilder private var libraryState: some View {
+        let pills = statePills
+        if !pills.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(pills, id: \.text) { pill in pill }
+                }
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    private var statePills: [StatusPill] {
+        var pills: [StatusPill] = []
+        if library.isInWatchlist(shown) { pills.append(StatusPill(text: "In My List", systemImage: "bookmark.fill")) }
+        if item.kind == .movie {
+            let target = PlaybackTarget(item: shown)
+            if library.isWatched(target) {
+                pills.append(StatusPill(text: "Watched", systemImage: "checkmark.circle.fill", tint: Theme.cached))
+            } else if let entry = library.progress(for: target), entry.position >= Library.minimumResume {
+                pills.append(StatusPill(text: "\(Int(entry.fraction * 100))% watched", systemImage: "play.circle", tint: Theme.accent))
+            }
+            if downloads.item(for: target)?.isFinished == true {
+                pills.append(StatusPill(text: "Downloaded", systemImage: "arrow.down.circle.fill", tint: Theme.accent))
+            }
+        } else if let detail = model.detail {
+            let regular = detail.episodes.filter { $0.season > 0 && $0.hasAired }
+            let watched = regular.filter { library.isWatched($0) }.count
+            if watched > 0 {
+                pills.append(StatusPill(text: "\(watched) of \(regular.count) watched", systemImage: "checkmark.circle",
+                                        tint: watched == regular.count ? Theme.cached : .white))
+            }
+            let saved = detail.episodes.filter { downloads.item(for: PlaybackTarget(item: shown, episode: $0))?.isFinished == true }.count
+            if saved > 0 { pills.append(StatusPill(text: "\(saved) downloaded", systemImage: "arrow.down.circle.fill", tint: Theme.accent)) }
+            if let next = detail.episodes.filter({ !$0.hasAired && $0.season > 0 }).min(by: { ($0.released ?? .distantFuture) < ($1.released ?? .distantFuture) }),
+               let date = next.released {
+                pills.append(StatusPill(text: "\(next.code) \(date.formatted(.relative(presentation: .named)))", systemImage: "calendar", tint: Theme.accent))
+            }
+        }
+        return pills
+    }
+
     // MARK: Body sections
 
     private var overview: some View {
@@ -234,6 +309,13 @@ struct DetailView: View {
                     ForEach(detail.seasons, id: \.self) { season in
                         Button(season == 0 ? "Specials" : "Season \(season)") { model.season = season }
                     }
+                    Divider()
+                    let episodes = detail.episodes(in: model.season)
+                    if episodes.filter(\.hasAired).allSatisfy({ library.isWatched($0) }) {
+                        Button { library.markUnwatched(episodes) } label: { Label("Mark Season as Unwatched", systemImage: "circle") }
+                    } else {
+                        Button { library.markWatched(episodes, of: shown) } label: { Label("Mark Season as Watched", systemImage: "checkmark.circle") }
+                    }
                 } label: {
                     Label(model.season == 0 ? "Specials" : "Season \(model.season)", systemImage: "chevron.up.chevron.down")
                         .font(.subheadline.weight(.semibold))
@@ -251,19 +333,32 @@ struct DetailView: View {
                         playback.chooseSource(for: target)
                     } download: {
                         playback.download(target, settings: settings)
+                    } toggleWatched: {
+                        if library.isWatched(episode) { library.markUnwatched(target) } else { library.markWatched(target) }
                     }
                 }
             }
         }
     }
 
+    /// Cast and directors; each opens that person's page.
     private func castSection(_ detail: MediaDetail) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Cast").font(.title3.weight(.bold))
+            Text("Cast & Crew").font(.title3.weight(.bold))
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    ForEach(detail.directors, id: \.self) { name in
+                        NavigationLink(value: PersonRoute(name: name)) {
+                            Chip(text: name, systemImage: "megaphone.fill", tint: Theme.accent)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Director")
+                    }
                     ForEach(detail.cast, id: \.self) { name in
-                        Chip(text: name, systemImage: "person.fill")
+                        NavigationLink(value: PersonRoute(name: name)) {
+                            Chip(text: name, systemImage: "person.fill")
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -280,6 +375,7 @@ struct EpisodeRow: View {
     let play: () -> Void
     let chooseSource: () -> Void
     var download: () -> Void = {}
+    var toggleWatched: () -> Void = {}
 
     var body: some View {
         Button(action: play) {
@@ -337,6 +433,49 @@ struct EpisodeRow: View {
             if !downloaded {
                 Button(action: download) { Label("Download", systemImage: "arrow.down.circle") }
             }
+            if episode.hasAired {
+                let watched = progress?.isFinished == true || (progress == nil && watchedElsewhere)
+                Button(action: toggleWatched) {
+                    Label(watched ? "Mark as Unwatched" : "Mark as Watched", systemImage: watched ? "circle" : "checkmark.circle")
+                }
+            }
+        }
+    }
+}
+
+/// Popular titles that share this one's main genre.
+struct MoreLikeThis: View {
+    let item: MediaItem
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
+    @State private var items: [MediaItem] = []
+
+    var body: some View {
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
+        Group {
+            if !items.isEmpty, let genre = item.genres.first {
+                ShelfRow(title: "More Like This", subtitle: "Popular in \(genre)", items: items, seeAll: {
+                    CatalogGridView(title: "\(genre) \(item.kind.title)", kind: item.kind, catalog: .popular, genre: genre)
+                }) { other in
+                    NavigationLink(value: other) { PosterCard(item: other, width: metrics.poster, mark: library.mark(for: other, downloads: downloads)) }
+                        .buttonStyle(.plain)
+                        .contextMenu { TitleContextMenu(item: other) }
+                }
+            }
+        }
+        .task(id: item.id + (item.genres.first ?? "")) {
+            guard let genre = item.genres.first else { return }
+            let found = (try? await Cinemeta.catalog(item.kind, .popular, genre: genre)) ?? []
+            // Titles sharing a second genre too come first.
+            let others = item.genres.dropFirst()
+            items = found.filter { $0.id != item.id }
+                .sorted { lhs, rhs in
+                    let a = lhs.genres.contains { others.contains($0) }, b = rhs.genres.contains { others.contains($0) }
+                    return a && !b
+                }
+                .prefix(16).map { $0 }
         }
     }
 }

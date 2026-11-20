@@ -5,10 +5,25 @@ import Foundation
 enum Cinemeta {
     enum Catalog: String, CaseIterable, Identifiable {
         case popular = "top"
+        case newest = "year"
         case topRated = "imdbRating"
 
         var id: String { rawValue }
-        var title: String { self == .popular ? "Popular" : "Top Rated" }
+        var title: String {
+            switch self {
+            case .popular: return "Popular"
+            case .newest: return "New"
+            case .topRated: return "Top Rated"
+            }
+        }
+        /// The "year" list needs a year where the others take a genre.
+        var filtersByYear: Bool { self == .newest }
+    }
+
+    /// Years the New list offers, newest first.
+    static var recentYears: [String] {
+        let year = Calendar.current.component(.year, from: Date())
+        return (0..<12).map { String(year - $0) }
     }
 
     static let pageSize = 50
@@ -22,6 +37,8 @@ enum Cinemeta {
 
     static func catalog(_ kind: MediaKind, _ catalog: Catalog = .popular, genre: String? = nil, page: Int = 0) async throws -> [MediaItem] {
         var extras: [String] = []
+        var genre = genre
+        if catalog.filtersByYear, genre.map({ Int($0) == nil }) ?? true { genre = recentYears.first }
         if let genre, !genre.isEmpty { extras.append("genre=\(HTTP.pathValue(genre))") }
         if page > 0 { extras.append("skip=\(page * pageSize)") }
         let extra = extras.isEmpty ? "" : "/" + extras.joined(separator: "&")
@@ -36,6 +53,52 @@ enum Cinemeta {
         let url = try HTTP.url("\(apiBase)/catalog/\(kind.rawValue)/top/search=\(HTTP.pathValue(trimmed)).json")
         let response = try await HTTP.get(url, as: CatalogResponse.self)
         return response.metas.compactMap { $0.item(fallbackKind: kind) }
+    }
+
+    /// Titles a person is in or directed. Cinemeta's search matches cast and directors as well as
+    /// names; results that don't credit the person (a title merely named like them) are dropped
+    /// unless nothing else is left.
+    static func person(_ name: String) async throws -> (movies: [MediaItem], series: [MediaItem], directed: Set<String>) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return ([], [], []) }
+        func credits(_ kind: MediaKind) async throws -> ([MediaItem], Set<String>) {
+            let url = try HTTP.url("\(apiBase)/catalog/\(kind.rawValue)/top/search=\(HTTP.pathValue(trimmed)).json")
+            let metas = try await HTTP.get(url, as: CatalogResponse.self).metas
+            let key = trimmed.lowercased()
+            let credited = metas.filter { meta in
+                (meta.cast + meta.director).contains { $0.lowercased() == key }
+            }
+            let chosen = credited.isEmpty ? metas : credited
+            let directed = Set(chosen.filter { $0.director.contains { $0.lowercased() == key } }.compactMap { $0.item(fallbackKind: kind)?.id })
+            return (chosen.compactMap { $0.item(fallbackKind: kind) }, directed)
+        }
+        async let movies = credits(.movie)
+        async let series = credits(.series)
+        let (m, s) = try await (movies, series)
+        return (m.0, s.0, m.1.union(s.1))
+    }
+
+    /// The latest and next episodes of many series in one request, the way Stremio's calendar
+    /// gets them: each series comes back with about ten episodes around today.
+    static func calendar(seriesIDs: [String]) async throws -> [MediaDetail] {
+        var seen = Set<String>()
+        let ids = seriesIDs.filter { $0.hasPrefix("tt") && seen.insert($0).inserted }
+        guard !ids.isEmpty else { return [] }
+        let chunks = stride(from: 0, to: ids.count, by: 40).map { Array(ids[$0..<min($0 + 40, ids.count)]) }
+        var details: [MediaDetail] = []
+        var firstError: Error?
+        for chunk in chunks {
+            do {
+                let joined = chunk.joined(separator: ",")
+                let url = try HTTP.url("\(apiBase)/catalog/series/calendar-videos/calendarVideosIds=\(joined).json")
+                let response = try await HTTP.get(url, as: DetailedResponse.self)
+                details += response.metasDetailed.compactMap { $0.detail(fallbackKind: .series) }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        if details.isEmpty, let firstError { throw firstError }
+        return details
     }
 
     static func detail(_ kind: MediaKind, id: String) async throws -> MediaDetail {
@@ -60,6 +123,17 @@ private struct CatalogResponse: Decodable {
     }
 
     enum CodingKeys: String, CodingKey { case metas }
+}
+
+private struct DetailedResponse: Decodable {
+    let metasDetailed: [RawMeta]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        metasDetailed = (try? container.decode([Lossy<RawMeta>].self, forKey: .metasDetailed))?.compactMap(\.value) ?? []
+    }
+
+    enum CodingKeys: String, CodingKey { case metasDetailed }
 }
 
 private struct MetaResponse: Decodable {

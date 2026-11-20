@@ -2,15 +2,63 @@ import SwiftUI
 import UIKit
 import ImageIO
 
+/// The accent colours offered under Settings → Appearance. Each pairs a bright accent with a deeper
+/// partner for gradients and the backdrop's bloom.
+enum AccentChoice: String, CaseIterable, Identifiable, Codable {
+    case rose, violet, ocean, mint, amber, crimson
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .rose: return "Rose"
+        case .violet: return "Violet"
+        case .ocean: return "Ocean"
+        case .mint: return "Mint"
+        case .amber: return "Amber"
+        case .crimson: return "Crimson"
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .rose: return Color(red: 0.957, green: 0.420, blue: 0.659)
+        case .violet: return Color(red: 0.66, green: 0.52, blue: 1.0)
+        case .ocean: return Color(red: 0.30, green: 0.66, blue: 1.0)
+        case .mint: return Color(red: 0.30, green: 0.86, blue: 0.70)
+        case .amber: return Color(red: 1.0, green: 0.70, blue: 0.28)
+        case .crimson: return Color(red: 1.0, green: 0.36, blue: 0.38)
+        }
+    }
+
+    var deep: Color {
+        switch self {
+        case .rose: return Color(red: 0.46, green: 0.26, blue: 0.86)
+        case .violet: return Color(red: 0.32, green: 0.20, blue: 0.78)
+        case .ocean: return Color(red: 0.16, green: 0.26, blue: 0.80)
+        case .mint: return Color(red: 0.08, green: 0.45, blue: 0.55)
+        case .amber: return Color(red: 0.85, green: 0.30, blue: 0.20)
+        case .crimson: return Color(red: 0.55, green: 0.10, blue: 0.40)
+        }
+    }
+}
+
 enum Theme {
-    static let accent = Color(red: 0.957, green: 0.420, blue: 0.659)
-    static let accentDeep = Color(red: 0.46, green: 0.26, blue: 0.86)
+    /// Set from AppSettings as it loads and whenever the choice changes; RootView rebuilds its tabs
+    /// when it does, so every view reads the new colour.
+    nonisolated(unsafe) static var choice: AccentChoice = .rose
+
+    static var accent: Color { choice.accent }
+    static var accentDeep: Color { choice.deep }
     static let background = Color(red: 0.035, green: 0.035, blue: 0.055)
     static let surface = Color.white.opacity(0.06)
     static let secondaryText = Color.white.opacity(0.62)
     static let cached = Color(red: 0.33, green: 0.85, blue: 0.55)
+    static let warning = Color.orange
+    static let problem = Color(red: 1.0, green: 0.33, blue: 0.33)
+    /// The red dot that marks something waiting on you.
+    static let attention = Color(red: 1.0, green: 0.27, blue: 0.27)
 
-    static let accentGradient = LinearGradient(colors: [accentDeep, accent], startPoint: .leading, endPoint: .trailing)
+    static var accentGradient: LinearGradient { LinearGradient(colors: [accentDeep, accent], startPoint: .leading, endPoint: .trailing) }
 
     /// The app's backdrop: near-black with a faint violet bloom, so glass has something to refract.
     struct Backdrop: View {

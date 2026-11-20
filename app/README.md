@@ -31,8 +31,43 @@ With a free Apple ID a signature lasts 7 days; SideStore and AltStore refresh it
 
 ## First run
 
-Settings → Debrid Service → pick your service, paste its API key, **Save and Test**. "Working"
-means the same path playback uses succeeded (search, then resolve an instant source).
+Setup opens on first launch: pick a debrid service and test its key, add Stremio addons, choose how
+Play behaves, connect Trakt. Every step but the first can be skipped; the last page lists what is
+set and what isn't. Run it again from Settings → Run Setup Again. "Working" means the same path
+playback uses succeeded (search, then resolve an instant source).
+
+## Screens
+
+- **Home**: the featured carousel, then *Waiting on You* (setup to finish, failed downloads, a
+  stopped Trakt sync, new episodes, downloads in progress), Continue Watching, New Episodes,
+  My List and catalogue rows. A red badge on the tab counts what needs you; a red dot on the gear
+  means Settings has something to fix. Choose and reorder sections under Settings → Home Screen.
+- **Explore**: movies and series in one place. *Rows* shows a shelf per list and genre, each with
+  See All; *Grid* shows one list (Popular, New by year, Top Rated) with its filters.
+- **Calendar**: new and upcoming episodes of the series in My List and those you've watched lately,
+  by day, as *Cards* or a *List*; *Recent* looks back a month.
+- **Library**: Downloads, History and Calendar at the top, Continue Watching, then My List as
+  *Posters*, *Rows*, *Banners* or an *Overview* of counts, hours watched and your genres. Filter and
+  sort it.
+- **Downloads**: one live list with total progress, speed, time left and storage, filtered by
+  Active, Saved and Problems; pause or resume everything, or delete what you've watched.
+- **History**: what you've played, grouped by day, with watched marks and resume points.
+- **Search**: recent searches, a top result, and a *People* scope that finds titles by cast or
+  director. Cast and directors on title pages open the same person page.
+- **Title pages**: where the title stands in your library (listed, watched, downloaded, next
+  episode date), mark films, episodes or whole seasons watched, share or open in IMDb, and More
+  Like This.
+- **Sources**: the pick rules in force, with a link to change them, and how many releases are
+  instant and which addons they came from.
+- **Settings → Status**: every link in the chain is checked (debrid key, Torrentio, Cinemeta, each
+  addon, Trakt, downloads, storage) and marked OK, WARN, FAIL or Not set, each with what to do and a
+  button to go there. Recent alerts are listed below; the report can be shared.
+- **Settings → Appearance**: accent colour, poster size, ratings on posters and whether the featured
+  row moves by itself.
+- **Alerts**: a pop-up when a download finishes or fails or Trakt stops syncing, with a button to
+  the right place.
+- **Keyboard** (iPad): ⌘1–4 switch tabs, ⌘F searches, ⌘Y opens History, ⇧⌘D Downloads, ⇧⌘S Status,
+  ⌘, Settings.
 
 ## How playing works
 
@@ -49,7 +84,7 @@ message instead of playing that clip.
 
 - Built with Xcode 27.1 (the `xcode-27` GitHub-hosted runner), which is what lets the unfolded
   iPhone Duo resize the app instead of letterboxing it.
-- Navigation is a system `TabView` with `.sidebarAdaptable`: a Liquid Glass tab bar on narrow
+- Navigation is a system `TabView` with `.sidebarAdaptable` (Home, Explore, Calendar, Library, Search): a Liquid Glass tab bar on narrow
   windows, a sidebar or the system's vertical rail on wide ones. A hand-drawn tab bar would get
   neither.
 - No `UIRequiresFullScreen`, every orientation, and layouts that follow size classes and measured

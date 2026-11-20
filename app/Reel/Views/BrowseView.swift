@@ -10,7 +10,9 @@ final class BrowseModel: ObservableObject {
     private var key = ""
 
     func reset(kind: MediaKind, catalog: Cinemeta.Catalog, genre: String?) async {
-        key = "\(kind.rawValue)|\(catalog.rawValue)|\(genre ?? "")"
+        let newKey = "\(kind.rawValue)|\(catalog.rawValue)|\(genre ?? "")"
+        guard newKey != key || items.isEmpty else { return }
+        key = newKey
         items = []
         page = 0
         exhausted = false
@@ -36,78 +38,260 @@ final class BrowseModel: ObservableObject {
     }
 }
 
-struct BrowseView: View {
-    let kind: MediaKind
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @StateObject private var model = BrowseModel()
-    @State private var catalog: Cinemeta.Catalog = .popular
-    @State private var genre: String?
+enum ExploreLayout: String, CaseIterable, Identifiable {
+    case rows, grid
+    var id: String { rawValue }
+    var title: String { self == .rows ? "Rows" : "Grid" }
+    var systemImage: String { self == .rows ? "rectangle.split.1x2" : "square.grid.3x3" }
+}
+
+/// Films and series in one place. Rows shows a shelf per list and genre to scroll through; Grid
+/// shows one list at a time with its filters, loading more as you go.
+struct ExploreView: View {
+    @EnvironmentObject private var router: AppRouter
+    @AppStorage("explore.layout") private var layout: ExploreLayout = .rows
 
     var body: some View {
-        let metrics = CardMetrics(sizeClass)
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                Picker("List", selection: $catalog) {
-                    ForEach(Cinemeta.Catalog.allCases) { Text($0.title).tag($0) }
+            VStack(alignment: .leading, spacing: 22) {
+                Picker("Type", selection: $router.exploreKind) {
+                    ForEach(MediaKind.allCases) { Text($0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 360)
                 .padding(.horizontal, 20)
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        genreButton(nil, title: "All")
-                        ForEach(Cinemeta.genres, id: \.self) { genreButton($0, title: $0) }
-                    }
-                    .padding(.horizontal, 20)
-                }
-
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: metrics.poster, maximum: metrics.poster * 1.35), spacing: 14, alignment: .top)], spacing: 22) {
-                    ForEach(model.items) { item in
-                        NavigationLink(value: item) {
-                            PosterCard(item: item, width: metrics.poster)
-                        }
-                        .buttonStyle(.plain)
-                        .onAppear {
-                            if item.id == model.items.last?.id {
-                                Task { await model.loadMore(kind: kind, catalog: catalog, genre: genre) }
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-
-                if model.isLoading {
-                    ProgressView().frame(maxWidth: .infinity).padding()
-                } else if let error = model.error {
-                    StateMessage(title: "Couldn't load", message: error, actionTitle: "Retry") {
-                        Task { await model.reset(kind: kind, catalog: catalog, genre: genre) }
-                    }
+                switch layout {
+                case .rows: ExploreRows(kind: router.exploreKind)
+                case .grid: ExploreGrid(kind: router.exploreKind)
                 }
             }
             .padding(.vertical, 12)
         }
         .background(Theme.Backdrop())
-        .navigationTitle(kind.title)
-        .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
-        .task(id: "\(catalog.rawValue)|\(genre ?? "")") {
-            await model.reset(kind: kind, catalog: catalog, genre: genre)
+        .navigationTitle("Explore")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Layout", selection: $layout) {
+                        ForEach(ExploreLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
+                    }
+                } label: {
+                    Label("Layout", systemImage: layout.systemImage)
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { router.openSettings() } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings")
+            }
+        }
+    }
+}
+
+/// A shelf per list, then one per genre. Each loads as it scrolls into view.
+private struct ExploreRows: View {
+    let kind: MediaKind
+
+    private struct Shelf: Identifiable {
+        let title: String
+        let catalog: Cinemeta.Catalog
+        let genre: String?
+        var id: String { title }
+    }
+
+    private var shelves: [Shelf] {
+        let year = Cinemeta.recentYears.first
+        return [Shelf(title: "Popular", catalog: .popular, genre: nil),
+                Shelf(title: "New in \(year ?? "")", catalog: .newest, genre: year),
+                Shelf(title: "Top Rated", catalog: .topRated, genre: nil)]
+            + Cinemeta.genres.map { Shelf(title: $0, catalog: .popular, genre: $0) }
+    }
+
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: 30) {
+            ForEach(shelves) { shelf in
+                LazyShelf(title: shelf.title, kind: kind, catalog: shelf.catalog, genre: shelf.genre)
+            }
+        }
+    }
+}
+
+/// A catalogue shelf that fetches its titles the first time it appears.
+struct LazyShelf: View {
+    let title: String
+    let kind: MediaKind
+    let catalog: Cinemeta.Catalog
+    let genre: String?
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
+    @State private var items: [MediaItem] = []
+    @State private var failed = false
+
+    var body: some View {
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
+        Group {
+            if items.isEmpty {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(title: title).padding(.horizontal, 20)
+                    if failed {
+                        Text("Couldn't load this row.").font(.footnote).foregroundStyle(Theme.secondaryText).padding(.horizontal, 20)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 14) {
+                                ForEach(0..<6, id: \.self) { _ in
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surface)
+                                        .frame(width: metrics.poster, height: metrics.poster * 1.5)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+                        .disabled(true)
+                    }
+                }
+            } else {
+                ShelfRow(title: title, items: items, seeAll: {
+                    CatalogGridView(title: "\(title) \(kind.title)", kind: kind, catalog: catalog, genre: genre)
+                }) { item in
+                    NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
+                        .buttonStyle(.plain)
+                        .contextMenu { TitleContextMenu(item: item) }
+                }
+            }
+        }
+        .task(id: "\(kind.rawValue)|\(catalog.rawValue)|\(genre ?? "")") {
+            items = []
+            failed = false
+            do {
+                items = Array(try await Cinemeta.catalog(kind, catalog, genre: genre).prefix(20))
+            } catch {
+                failed = true
+            }
+        }
+    }
+}
+
+/// One list at a time: Popular, New or Top Rated, narrowed by genre (or year, for New).
+private struct ExploreGrid: View {
+    let kind: MediaKind
+    @AppStorage("explore.catalog") private var catalog: Cinemeta.Catalog = .popular
+    @State private var genre: String?
+    @State private var year: String = Cinemeta.recentYears.first ?? ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Picker("List", selection: $catalog) {
+                ForEach(Cinemeta.Catalog.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 360)
+            .padding(.horizontal, 20)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if catalog.filtersByYear {
+                        ForEach(Cinemeta.recentYears, id: \.self) { value in
+                            chip(value, selected: year == value) { year = value }
+                        }
+                    } else {
+                        chip("All", selected: genre == nil) { genre = nil }
+                        ForEach(Cinemeta.genres, id: \.self) { value in
+                            chip(value, selected: genre == value) { genre = value }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+
+            CatalogGrid(kind: kind, catalog: catalog, genre: catalog.filtersByYear ? year : genre)
         }
     }
 
-    private func genreButton(_ value: String?, title: String) -> some View {
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button {
-            withAnimation(.snappy) { genre = value }
+            withAnimation(.snappy) { action() }
         } label: {
             Text(title).font(.subheadline.weight(.semibold)).padding(.horizontal, 6)
         }
         .buttonStyle(.glass)
-        .tint(genre == value ? Theme.accent : nil)
+        .tint(selected ? Theme.accent : nil)
     }
 }
 
-struct SearchView: View {
+/// A grid of one catalogue list that loads the next page as the last poster appears. Lives inside
+/// a ScrollView.
+struct CatalogGrid: View {
+    let kind: MediaKind
+    let catalog: Cinemeta.Catalog
+    let genre: String?
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
+    @StateObject private var model = BrowseModel()
+
+    var body: some View {
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
+        VStack(spacing: 18) {
+            LazyVGrid(columns: metrics.posterColumns, spacing: 22) {
+                ForEach(model.items) { item in
+                    NavigationLink(value: item) {
+                        PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads))
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { TitleContextMenu(item: item) }
+                    .onAppear {
+                        if item.id == model.items.last?.id {
+                            Task { await model.loadMore(kind: kind, catalog: catalog, genre: genre) }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+
+            if model.isLoading {
+                ProgressView().frame(maxWidth: .infinity).padding()
+            } else if let error = model.error {
+                StateMessage(title: "Couldn't load", message: error, actionTitle: "Retry") {
+                    Task { await model.reset(kind: kind, catalog: catalog, genre: genre) }
+                }
+            } else if model.items.isEmpty {
+                StateMessage(title: "Nothing here", message: "This list has no titles right now.", systemImage: "tray")
+            }
+        }
+        .task(id: "\(kind.rawValue)|\(catalog.rawValue)|\(genre ?? "")") {
+            await model.reset(kind: kind, catalog: catalog, genre: genre)
+        }
+    }
+}
+
+/// "See All" from a shelf: that list as a full grid.
+struct CatalogGridView: View {
+    let title: String
+    let kind: MediaKind
+    let catalog: Cinemeta.Catalog
+    let genre: String?
+
+    var body: some View {
+        ScrollView {
+            CatalogGrid(kind: kind, catalog: catalog, genre: genre)
+                .padding(.vertical, 12)
+        }
+        .background(Theme.Backdrop())
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Search
+
+struct SearchView: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
     @State private var query = ""
     @State private var movies: [MediaItem] = []
     @State private var series: [MediaItem] = []
@@ -115,33 +299,57 @@ struct SearchView: View {
     @State private var scope: SearchScope = .all
 
     enum SearchScope: String, CaseIterable, Identifiable {
-        case all = "All", movies = "Movies", series = "Series"
+        case all = "All", movies = "Movies", series = "Series", people = "People"
         var id: String { rawValue }
     }
 
+    private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
+
+    /// The likeliest match: a title named exactly as typed, otherwise the first one found.
+    private var topResult: MediaItem? {
+        let all = movies + series
+        return all.first { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame } ?? (movies.first ?? series.first)
+    }
+
     var body: some View {
-        let metrics = CardMetrics(sizeClass)
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
-                if query.trimmingCharacters(in: .whitespaces).isEmpty {
-                    StateMessage(title: "Search", message: "Find movies and series by title.", systemImage: "magnifyingglass")
-                        .padding(.top, 60)
-                } else if !isSearching && movies.isEmpty && series.isEmpty {
-                    StateMessage(title: "No results", message: "Nothing matches “\(query)”.", systemImage: "magnifyingglass")
-                        .padding(.top, 60)
+                if trimmed.isEmpty {
+                    suggestions
+                } else if scope == .people {
+                    PersonResults(name: trimmed)
+                } else {
+                    if !isSearching && movies.isEmpty && series.isEmpty {
+                        StateMessage(title: "No results", message: "Nothing matches “\(query)”. Try People to search by cast or director.",
+                                     systemImage: "magnifyingglass", actionTitle: "Search People") { scope = .people }
+                            .padding(.top, 60)
+                    }
+                    if scope == .all, let top = topResult {
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionHeader(title: "Top Result").padding(.horizontal, 20)
+                            NavigationLink(value: top) {
+                                BannerCard(item: top, width: min(metrics.landscape * 1.5, 520),
+                                           eyebrow: top.kind.singular, subtitle: HeroCarousel.subtitle(for: top))
+                            }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { settings.rememberSearch(query) })
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                    if scope != .series, !movies.isEmpty { section("Movies", movies, metrics) }
+                    if scope != .movies, !series.isEmpty { section("Series", series, metrics) }
                 }
-                if scope != .series, !movies.isEmpty { section("Movies", movies, metrics) }
-                if scope != .movies, !series.isEmpty { section("Series", series, metrics) }
             }
             .padding(.vertical, 12)
         }
         .background(Theme.Backdrop())
         .navigationTitle("Search")
-        .searchable(text: $query, prompt: "Movies and series")
+        .searchable(text: $query, prompt: "Titles, cast and directors")
         .searchScopes($scope) {
             ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
         }
-        .navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
+        .onSubmit(of: .search) { settings.rememberSearch(query) }
         .task(id: query) {
             let text = query
             guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { movies = []; series = []; return }
@@ -158,15 +366,191 @@ struct SearchView: View {
         }
     }
 
-    private func section(_ title: String, _ items: [MediaItem], _ metrics: CardMetrics) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(title).font(.title3.weight(.bold)).padding(.horizontal, 20)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: metrics.poster, maximum: metrics.poster * 1.35), spacing: 14, alignment: .top)], spacing: 22) {
-                ForEach(items) { item in
-                    NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster) }.buttonStyle(.plain)
+    /// Before anything is typed: recent searches, then what's popular.
+    @ViewBuilder private var suggestions: some View {
+        if !settings.recentSearches.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Recent Searches").font(.title3.weight(.bold))
+                    Spacer()
+                    Button("Clear") { withAnimation { settings.clearRecentSearches() } }
+                        .font(.subheadline.weight(.semibold))
+                }
+                ForEach(settings.recentSearches, id: \.self) { recent in
+                    HStack {
+                        Button {
+                            query = recent
+                        } label: {
+                            Label(recent, systemImage: "clock.arrow.circlepath")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            withAnimation { settings.forgetSearch(recent) }
+                        } label: {
+                            Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(Theme.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(recent)")
+                    }
+                    .padding(.vertical, 6)
+                    Divider().opacity(0.4)
                 }
             }
             .padding(.horizontal, 20)
+        }
+        LazyShelf(title: "Popular Movies", kind: .movie, catalog: .popular, genre: nil)
+        LazyShelf(title: "Popular Series", kind: .series, catalog: .popular, genre: nil)
+    }
+
+    private func section(_ title: String, _ items: [MediaItem], _ metrics: CardMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: title, subtitle: "\(items.count) found").padding(.horizontal, 20)
+            LazyVGrid(columns: metrics.posterColumns, spacing: 22) {
+                ForEach(items) { item in
+                    NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
+                        .buttonStyle(.plain)
+                        .contextMenu { TitleContextMenu(item: item) }
+                        .simultaneousGesture(TapGesture().onEnded { settings.rememberSearch(query) })
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+}
+
+// MARK: - People
+
+@MainActor
+final class PersonModel: ObservableObject {
+    @Published var movies: [MediaItem] = []
+    @Published var series: [MediaItem] = []
+    @Published var directed: Set<String> = []
+    @Published var isLoading = false
+    @Published var error: String?
+    private var loaded = ""
+
+    func load(_ name: String) async {
+        guard loaded != name else { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let found = try await Cinemeta.person(name)
+            guard !Task.isCancelled else { return }
+            movies = found.movies
+            series = found.series
+            directed = found.directed
+            error = nil
+            loaded = name
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    var all: [MediaItem] { movies + series }
+
+    /// The best-rated few: what the person is known for.
+    var knownFor: [MediaItem] {
+        all.sorted { (Double($0.rating ?? "") ?? 0) > (Double($1.rating ?? "") ?? 0) }.prefix(10).map { $0 }
+    }
+
+    /// Everything, newest first.
+    var filmography: [MediaItem] {
+        all.sorted { ($0.year ?? "") > ($1.year ?? "") }
+    }
+}
+
+/// A cast or crew member: what they're known for, then everything they're credited in.
+struct PersonView: View {
+    let name: String
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                HStack(spacing: 16) {
+                    Text(initials)
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .frame(width: 84, height: 84)
+                        .background(Theme.accentGradient, in: Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(name).font(.largeTitle.weight(.bold)).lineLimit(2).minimumScaleFactor(0.6)
+                        Text("Cast and crew").font(.subheadline).foregroundStyle(Theme.secondaryText)
+                    }
+                }
+                .padding(.horizontal, 20)
+                PersonResults(name: name)
+            }
+            .padding(.vertical, 12)
+        }
+        .background(Theme.Backdrop())
+        .navigationTitle(name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var initials: String {
+        name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
+    }
+}
+
+/// Known For and Filmography for a name; used by the person page and Search's People scope.
+struct PersonResults: View {
+    let name: String
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
+    @StateObject private var model = PersonModel()
+
+    var body: some View {
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
+        VStack(alignment: .leading, spacing: 26) {
+            if model.isLoading && model.all.isEmpty {
+                ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+            } else if let error = model.error, model.all.isEmpty {
+                StateMessage(title: "Couldn't search", message: error, actionTitle: "Retry") {
+                    Task { await model.load(name) }
+                }
+            } else if model.all.isEmpty {
+                StateMessage(title: "No credits found", message: "Cinemeta lists nothing for “\(name)”.", systemImage: "person.crop.circle.badge.questionmark")
+                    .padding(.top, 40)
+            } else {
+                HStack(spacing: 8) {
+                    StatusPill(text: "\(model.movies.count) movies", systemImage: "film")
+                    StatusPill(text: "\(model.series.count) series", systemImage: "tv")
+                    if !model.directed.isEmpty {
+                        StatusPill(text: "Directed \(model.directed.count)", systemImage: "megaphone", tint: Theme.accent)
+                    }
+                }
+                .padding(.horizontal, 20)
+                ShelfRow(title: "Known For", items: model.knownFor) { item in
+                    NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
+                        .buttonStyle(.plain)
+                        .contextMenu { TitleContextMenu(item: item) }
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionHeader(title: "Filmography", subtitle: "Newest first").padding(.horizontal, 20)
+                    LazyVStack(spacing: 10) {
+                        ForEach(model.filmography) { item in
+                            NavigationLink(value: item) {
+                                MediaRow(item: item) {
+                                    if model.directed.contains(item.id) {
+                                        StatusPill(text: "Director", tint: Theme.accent)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { TitleContextMenu(item: item) }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+            }
+        }
+        .task(id: name) {
+            try? await Task.sleep(nanoseconds: 300_000_000)  // debounce typing in Search
+            guard !Task.isCancelled else { return }
+            await model.load(name)
         }
     }
 }

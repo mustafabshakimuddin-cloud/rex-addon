@@ -168,3 +168,117 @@ struct TraktSettingsView: View {
         }
     }
 }
+
+/// Accent colour, poster size and the small things that change how the app looks.
+struct AppearanceView: View {
+    @EnvironmentObject private var settings: AppSettings
+
+    private let sample = MediaItem(
+        id: "tt0111161", kind: .movie, name: "The Shawshank Redemption",
+        poster: URL(string: "https://images.metahub.space/poster/medium/tt0111161/img"),
+        year: "1994", rating: "9.3")
+
+    var body: some View {
+        Form {
+            Section {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 14)], spacing: 14) {
+                    ForEach(AccentChoice.allCases) { choice in
+                        Button {
+                            withAnimation(.snappy) { settings.accent = choice }
+                        } label: {
+                            VStack(spacing: 6) {
+                                Circle()
+                                    .fill(LinearGradient(colors: [choice.deep, choice.accent], startPoint: .bottomLeading, endPoint: .topTrailing))
+                                    .frame(width: 44, height: 44)
+                                    .overlay {
+                                        if settings.accent == choice {
+                                            Image(systemName: "checkmark").font(.headline.weight(.bold)).foregroundStyle(.white)
+                                        }
+                                    }
+                                    .overlay(Circle().strokeBorder(.white.opacity(settings.accent == choice ? 0.9 : 0.15), lineWidth: 2))
+                                Text(choice.title).font(.caption).foregroundStyle(settings.accent == choice ? .white : Theme.secondaryText)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(choice.title)
+                        .accessibilityAddTraits(settings.accent == choice ? .isSelected : [])
+                    }
+                }
+                .padding(.vertical, 6)
+            } header: {
+                Text("Accent Colour")
+            }
+
+            Section {
+                Picker("Poster size", selection: $settings.posterSize) {
+                    ForEach(PosterSize.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                HStack {
+                    Spacer()
+                    PosterCard(item: sample, width: 116 * settings.posterSize.scale)
+                        .environment(\.showsRatings, settings.showRatings)
+                        .animation(.snappy, value: settings.posterSize)
+                    Spacer()
+                }
+                .padding(.vertical, 6)
+                Toggle("Show ratings on posters", isOn: $settings.showRatings)
+            } header: {
+                Text("Posters")
+            } footer: {
+                Text("Larger posters show fewer titles per row.")
+            }
+
+            Section {
+                Toggle("Move the featured row by itself", isOn: $settings.heroAutoAdvance)
+            } header: {
+                Text("Home")
+            } footer: {
+                Text("The featured titles at the top of Home move on every few seconds. Turn this off to move them only by swiping.")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .navigationTitle("Appearance")
+    }
+}
+
+/// Which sections Home shows, in what order.
+struct HomeLayoutView: View {
+    @EnvironmentObject private var settings: AppSettings
+    @State private var confirmReset = false
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(settings.homeOrder) { section in
+                    Toggle(isOn: binding(for: section)) {
+                        Label(section.title, systemImage: section.systemImage)
+                    }
+                }
+                .onMove { settings.homeOrder.move(fromOffsets: $0, toOffset: $1) }
+            } footer: {
+                Text("Drag to reorder. Hidden sections aren't loaded. Waiting on You collects anything that needs you: setup, failed downloads, new episodes, a stopped sync.")
+            }
+            Section {
+                Button("Reset to Default", role: .destructive) { confirmReset = true }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .environment(\.editMode, .constant(.active))
+        .navigationTitle("Home Screen")
+        .confirmationDialog("Show every section in the original order?", isPresented: $confirmReset, titleVisibility: .visible) {
+            Button("Reset", role: .destructive) { settings.resetHomeLayout() }
+        }
+    }
+
+    private func binding(for section: HomeSection) -> Binding<Bool> {
+        Binding(
+            get: { !settings.homeHidden.contains(section) },
+            set: { shown in
+                if shown { settings.homeHidden.remove(section) } else { settings.homeHidden.insert(section) }
+            }
+        )
+    }
+}

@@ -216,13 +216,11 @@ jobs:
             DISPLAYS=$(limit 30 xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
             [ -z "$DISPLAYS" ] && DISPLAYS="default"
             FIRST=1
-            for SCREEN in home detail sources player movies settings library; do
+            # Every launch passes -ReelShot, which also keeps first-run setup from covering the
+            # screen ("home" opens nothing else; "setup" shows setup itself).
+            for SCREEN in home setup detail sources player movies calendar library downloads history person settings status; do
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
-              if [ "$SCREEN" = "home" ]; then
-                limit 300 xcrun simctl launch "$UDID" community.reel.app || true
-              else
-                limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
-              fi
+              limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
               if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
               if ! limit 30 xcrun simctl spawn "$UDID" launchctl list | grep -q community.reel.app; then
                 echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"

@@ -4,6 +4,8 @@ struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var trakt: TraktStore
     @EnvironmentObject private var memory: SourceMemory
+    @EnvironmentObject private var alerts: AlertCenter
+    @EnvironmentObject private var router: AppRouter
     @State private var confirmForget = false
     @State private var keyDraft = ""
     @State private var testState: TestState = .idle
@@ -12,6 +14,30 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section {
+                NavigationLink(value: SettingsPage.status) {
+                    HStack(spacing: 12) {
+                        Image(systemName: statusSymbol)
+                            .font(.title3)
+                            .foregroundStyle(statusTint)
+                            .frame(width: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Status").font(.body.weight(.semibold))
+                            Text(statusLine).font(.caption).foregroundStyle(Theme.secondaryText)
+                        }
+                        Spacer()
+                        if Attention.settingsNeedAttention(settings: settings, trakt: trakt, alerts: alerts) { AttentionDot() }
+                    }
+                }
+                Button {
+                    router.openSetup()
+                } label: {
+                    Label(settings.setupFinished ? "Run Setup Again" : "Finish Setup", systemImage: "wand.and.stars")
+                }
+            } footer: {
+                Text("Status checks your debrid service, Torrentio, the catalogue and each addon, and says what to do about anything that fails.")
+            }
+
             Section {
                 Picker("Service", selection: $settings.debridService) {
                     ForEach(DebridService.allCases) { Text($0.name).tag($0) }
@@ -40,41 +66,17 @@ struct SettingsView: View {
 
             Section {
                 Toggle("Play the best source automatically", isOn: $settings.autoPlayBest)
-                Toggle("Instant sources only", isOn: $settings.cachedOnly)
-                Picker("Sort", selection: $settings.sort) {
-                    ForEach(TorrentioSort.allCases) { Text($0.title).tag($0) }
+                NavigationLink(value: SettingsPage.pickRules) {
+                    LabeledContent("Pick rules", value: pickRulesSummary)
                 }
-                Picker("Maximum size", selection: $settings.maxSizeGB) {
-                    Text("No limit").tag(0)
-                    ForEach([2, 5, 10, 20, 40], id: \.self) { Text("\($0) GB").tag($0) }
-                }
-                NavigationLink {
-                    MultiSelectList(title: "Hide Qualities", options: TorrentioConfig.qualityOptions, selection: $settings.excludedQualities, label: Self.qualityLabel)
-                } label: {
-                    LabeledContent("Hide qualities", value: settings.excludedQualities.isEmpty ? "None" : settings.excludedQualities.map(Self.qualityLabel).joined(separator: ", "))
-                }
-                NavigationLink {
-                    MultiSelectList(title: "Providers", options: TorrentioConfig.allProviders, selection: $settings.providers, label: { $0 })
-                } label: {
-                    LabeledContent("Providers", value: settings.providers.isEmpty ? "All" : "\(settings.providers.count) selected")
-                }
-            } header: {
-                Text("Sources")
-            } footer: {
-                Text("With automatic play off, Play shows every source so you can pick the quality and size. “Instant” sources are already cached by your debrid service and start straight away.")
-            }
-
-            Section {
-                NavigationLink {
-                    AddonsView()
-                } label: {
+                NavigationLink(value: SettingsPage.addons) {
                     LabeledContent("Stremio addons", value: settings.addons.isEmpty ? "None" : "\(settings.addons.filter(\.enabled).count) on")
                 }
                 Toggle("Get streams ready on title pages", isOn: $settings.prepareAhead)
             } header: {
-                Text("More Sources")
+                Text("Sources")
             } footer: {
-                Text("Addons such as Comet or MediaFusion add their results to Torrentio's, so a title still plays when one of them is down. Getting streams ready resolves the likely pick when you open a title, so Play starts at once; it adds that release to your debrid account before you press Play.")
+                Text("With automatic play off, Play shows every source so you can pick. Pick rules decide which releases are listed and which Play chooses. Addons such as Comet or MediaFusion add their results to Torrentio's. Getting streams ready resolves the likely pick when you open a title, so Play starts at once; it adds that release to your debrid account before you press Play.")
             }
 
             Section {
@@ -91,10 +93,13 @@ struct SettingsView: View {
             }
 
             Section {
-                NavigationLink {
-                    TraktSettingsView()
-                } label: {
-                    LabeledContent("Trakt", value: trakt.isConnected ? "Connected" : "Not connected")
+                NavigationLink(value: SettingsPage.trakt) {
+                    LabeledContent("Trakt") {
+                        HStack(spacing: 6) {
+                            Text(trakt.isConnected ? "Connected" : "Not connected")
+                            if trakt.syncError != nil { AttentionDot(size: 7) }
+                        }
+                    }
                 }
             } header: {
                 Text("Sync")
@@ -131,6 +136,22 @@ struct SettingsView: View {
                 SubtitlePreview(appearance: SubtitleAppearance(scale: settings.subtitleScale, style: settings.subtitleStyle, color: settings.subtitleColor))
             }
 
+            Section {
+                NavigationLink(value: SettingsPage.appearance) {
+                    LabeledContent("Appearance") {
+                        HStack(spacing: 6) {
+                            Circle().fill(settings.accent.accent).frame(width: 12, height: 12)
+                            Text(settings.accent.title)
+                        }
+                    }
+                }
+                NavigationLink(value: SettingsPage.homeScreen) {
+                    LabeledContent("Home Screen", value: "\(settings.visibleHomeSections.count) sections")
+                }
+            } header: {
+                Text("Customise")
+            }
+
             Section("About") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "–")
                 Text("Catalogue by Cinemeta. Sources by Torrentio and the addons you add. Subtitles by OpenSubtitles. Sync by Trakt. Playback by AetherEngine (LGPL 3 with an App Store exception) and FFmpeg (LGPL). \(AppConfig.name) hosts no content.")
@@ -141,8 +162,45 @@ struct SettingsView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.Backdrop())
         .navigationTitle("Settings")
+        .navigationDestination(for: SettingsPage.self) { page in
+            switch page {
+            case .status: StatusView()
+            case .pickRules: PickRulesView()
+            case .addons: AddonsView()
+            case .trakt: TraktSettingsView()
+            case .appearance: AppearanceView()
+            case .homeScreen: HomeLayoutView()
+            }
+        }
         .onAppear { keyDraft = settings.debridKey }
         .onChange(of: settings.debridService) { _, _ in testState = .idle }
+    }
+
+    private var statusLine: String {
+        if !settings.canFindSources { return "Nothing can play yet" }
+        if trakt.syncError != nil { return "Trakt sync stopped" }
+        if alerts.unseenProblems > 0 { return alerts.unseenProblems == 1 ? "1 new alert" : "\(alerts.unseenProblems) new alerts" }
+        return "Check that everything works"
+    }
+
+    private var statusSymbol: String {
+        if !settings.canFindSources { return "xmark.octagon.fill" }
+        if trakt.syncError != nil || alerts.unseenProblems > 0 { return "exclamationmark.triangle.fill" }
+        return "checkmark.seal.fill"
+    }
+
+    private var statusTint: Color {
+        if !settings.canFindSources { return Theme.problem }
+        if trakt.syncError != nil || alerts.unseenProblems > 0 { return Theme.warning }
+        return Theme.cached
+    }
+
+    private var pickRulesSummary: String {
+        var parts: [String] = []
+        if settings.cachedOnly { parts.append("Instant") }
+        if settings.maxSizeGB > 0 { parts.append("≤ \(settings.maxSizeGB) GB") }
+        if !settings.excludedQualities.isEmpty { parts.append("\(settings.excludedQualities.count) hidden") }
+        return parts.isEmpty ? "None" : parts.joined(separator: ", ")
     }
 
     @ViewBuilder private var testStatus: some View {
@@ -158,27 +216,57 @@ struct SettingsView: View {
         settings.debridKey = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Asks Torrentio for a well-known film through the debrid service and resolves the first
-    /// instant source: the same path playback takes, so a pass here means playback will work.
+    /// The same path playback takes, so a pass here means playback will work.
     private func test() async {
         testState = .testing
-        var config = settings.torrentio
-        config.cachedOnly = true
-        do {
-            let sources = try await Torrentio.streams(kind: .movie, videoID: "tt0111161", config: config)
-            guard let first = sources.first(where: { $0.isCached && $0.isPlayable }) else {
-                testState = .failed("No instant sources came back")
-                return
-            }
-            _ = try await Torrentio.resolve(first)
-            testState = .ok("Working")
-        } catch {
-            testState = .failed(error.localizedDescription)
+        switch await DebridCheck.run(settings.torrentio) {
+        case let .success(text): testState = .ok(text)
+        case let .failure(error): testState = .failed(error.localizedDescription)
         }
     }
 
     static func qualityLabel(_ key: String) -> String {
         ["4k": "4K", "scr": "Screener", "cam": "Cam", "unknown": "Unknown", "dolbyvision": "Dolby Vision", "hdrall": "HDR", "threed": "3D"][key] ?? key
+    }
+}
+
+/// Which releases are listed, and which one Play picks. Reached from Settings and from the
+/// sources list itself.
+struct PickRulesView: View {
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Instant sources only", isOn: $settings.cachedOnly)
+                Picker("Sort", selection: $settings.sort) {
+                    ForEach(TorrentioSort.allCases) { Text($0.title).tag($0) }
+                }
+                Picker("Maximum size", selection: $settings.maxSizeGB) {
+                    Text("No limit").tag(0)
+                    ForEach([2, 5, 10, 20, 40], id: \.self) { Text("\($0) GB").tag($0) }
+                }
+            } footer: {
+                Text("“Instant” sources are already cached by your debrid service and start straight away. A size limit keeps 4K remuxes off a slow connection.")
+            }
+            Section {
+                NavigationLink {
+                    MultiSelectList(title: "Hide Qualities", options: TorrentioConfig.qualityOptions, selection: $settings.excludedQualities, label: SettingsView.qualityLabel)
+                } label: {
+                    LabeledContent("Hide qualities", value: settings.excludedQualities.isEmpty ? "None" : settings.excludedQualities.map(SettingsView.qualityLabel).joined(separator: ", "))
+                }
+                NavigationLink {
+                    MultiSelectList(title: "Providers", options: TorrentioConfig.allProviders, selection: $settings.providers, label: { $0 })
+                } label: {
+                    LabeledContent("Providers", value: settings.providers.isEmpty ? "All" : "\(settings.providers.count) selected")
+                }
+            } footer: {
+                Text("Play picks instant sources first, then your quality order, then what has played well for you before. Changes apply to the next search.")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .navigationTitle("Pick Rules")
     }
 }
 

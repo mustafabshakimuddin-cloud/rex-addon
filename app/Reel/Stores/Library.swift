@@ -123,6 +123,50 @@ final class Library: ObservableObject {
         scheduleSave()
     }
 
+    /// Everything opened, most recent first: the History screen's timeline.
+    var history: [PlaybackProgress] {
+        progress.values.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    func clearHistory() {
+        progress = [:]
+        scheduleSave()
+    }
+
+    /// Marks a film or episode as seen without playing it. Kept on this device; Trakt learns of
+    /// watches through the scrobbles sent while playing.
+    func markWatched(_ target: PlaybackTarget) {
+        let duration = max(progress[target.videoID]?.duration ?? 0, 60)
+        progress[target.videoID] = PlaybackProgress(item: target.item, episode: target.episode, position: duration,
+                                                    duration: duration, updatedAt: Date())
+        scheduleSave()
+    }
+
+    func markUnwatched(_ target: PlaybackTarget) {
+        progress[target.videoID] = nil
+        externalWatched.remove(target.videoID)
+        scheduleSave()
+    }
+
+    func markWatched(_ episodes: [Episode], of item: MediaItem) {
+        let now = Date()
+        for (offset, episode) in episodes.filter(\.hasAired).enumerated() {
+            let duration = max(progress[episode.id]?.duration ?? 0, 60)
+            // A second apart, so the latest episode is also the most recent in History.
+            progress[episode.id] = PlaybackProgress(item: item, episode: episode, position: duration, duration: duration,
+                                                    updatedAt: now.addingTimeInterval(Double(offset) - Double(episodes.count)))
+        }
+        scheduleSave()
+    }
+
+    func markUnwatched(_ episodes: [Episode]) {
+        for episode in episodes {
+            progress[episode.id] = nil
+            externalWatched.remove(episode.id)
+        }
+        scheduleSave()
+    }
+
     /// The episode to offer next: the one after the latest watched, or the first.
     func nextEpisode(in detail: MediaDetail) -> Episode? {
         let regular = detail.episodes.filter { $0.season > 0 }.sorted { ($0.season, $0.number) < ($1.season, $1.number) }

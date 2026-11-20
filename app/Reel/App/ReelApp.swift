@@ -25,10 +25,21 @@ final class AppStores {
     let downloads = DownloadStore()
     let trakt = TraktStore()
     let router = AppRouter()
+    let alerts = AlertCenter()
+    let upcoming = UpcomingStore()
     lazy var playback = PlaybackCenter(memory: memory, downloads: downloads)
 
     init() {
         trakt.attach(library)
+        let alerts = alerts
+        downloads.onEvent = { event in
+            switch event {
+            case let .finished(item):
+                alerts.post("Downloaded", message: item.target.displayTitle, level: .success, action: .openDownloads)
+            case let .failed(item, message):
+                alerts.post("Download failed", message: "\(item.target.displayTitle): \(message)", level: .problem, action: .openDownloads)
+            }
+        }
     }
 }
 
@@ -42,6 +53,8 @@ struct ReelApp: App {
     @StateObject private var memory: SourceMemory
     @StateObject private var downloads: DownloadStore
     @StateObject private var trakt: TraktStore
+    @StateObject private var alerts: AlertCenter
+    @StateObject private var upcoming: UpcomingStore
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -55,6 +68,8 @@ struct ReelApp: App {
         _memory = StateObject(wrappedValue: stores.memory)
         _downloads = StateObject(wrappedValue: stores.downloads)
         _trakt = StateObject(wrappedValue: stores.trakt)
+        _alerts = StateObject(wrappedValue: stores.alerts)
+        _upcoming = StateObject(wrappedValue: stores.upcoming)
     }
 
     var body: some Scene {
@@ -67,9 +82,12 @@ struct ReelApp: App {
                 .environmentObject(memory)
                 .environmentObject(downloads)
                 .environmentObject(trakt)
+                .environmentObject(alerts)
+                .environmentObject(upcoming)
                 .preferredColorScheme(.dark)
-                .tint(Theme.accent)
+                .tint(settings.accent.accent)
         }
+        .commands { AppCommands(router: router) }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { library.saveNow() }
             if phase == .active {

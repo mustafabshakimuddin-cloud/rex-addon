@@ -31,6 +31,13 @@ final class DownloadStore: ObservableObject {
 
     @Published private(set) var items: [String: DownloadItem] = [:]
 
+    /// Bytes a second for each running download, measured between progress reports.
+    @Published private(set) var speeds: [String: Double] = [:]
+
+    enum Event { case finished(DownloadItem), failed(DownloadItem, String) }
+    /// Told when a download finishes or fails, so the app can say so.
+    var onEvent: ((Event) -> Void)?
+
     /// Handed over by the app delegate when the system relaunches the app for finished transfers.
     var backgroundCompletion: (() -> Void)?
 
@@ -95,6 +102,8 @@ final class DownloadStore: ObservableObject {
                     Task { @MainActor in
                         self.relay.storeResumeData(data, for: item.id)
                         self.update(item.id) { $0.state = .paused }
+                        self.speeds[item.id] = nil
+                        self.lastPublished[item.id] = nil
                     }
                 }
             }
@@ -123,6 +132,22 @@ final class DownloadStore: ObservableObject {
         save()
     }
 
+    var active: [DownloadItem] { ordered.filter { $0.state == .downloading } }
+    var paused: [DownloadItem] { ordered.filter { $0.state == .paused } }
+    var finished: [DownloadItem] { ordered.filter(\.isFinished) }
+    var problems: [DownloadItem] {
+        ordered.filter { if case .failed = $0.state { return true } else { return false } }
+    }
+
+    func pauseAll() { active.forEach(pause) }
+    func resumeAll() { (paused + problems).forEach(resume) }
+
+    /// Seconds left at the current speed, when there is one to go by.
+    func remainingSeconds(_ item: DownloadItem) -> Double? {
+        guard item.state == .downloading, item.expected > 0, let speed = speeds[item.id], speed > 0 else { return nil }
+        return Double(item.expected - item.written) / speed
+    }
+
     var usedBytes: Int64 {
         items.values.compactMap { item -> Int64? in
             guard let name = item.fileName else { return nil }
@@ -142,6 +167,11 @@ final class DownloadStore: ObservableObject {
         // Progress arrives many times a second; the list needs about one update a second.
         let now = Date()
         if let last = lastPublished[id], now.timeIntervalSince(last) < 0.8 { return }
+        if let last = lastPublished[id], let previous = items[id]?.written, written > previous {
+            let instant = Double(written - previous) / now.timeIntervalSince(last)
+            // Smoothed, so the figure doesn't jump about with every report.
+            speeds[id] = speeds[id].map { $0 * 0.7 + instant * 0.3 } ?? instant
+        }
         lastPublished[id] = now
         update(id, persist: false) {
             $0.written = written
@@ -156,10 +186,16 @@ final class DownloadStore: ObservableObject {
             $0.state = .finished
             $0.written = max($0.written, $0.expected)
         }
+        speeds[id] = nil
+        lastPublished[id] = nil
+        if let item = items[id] { onEvent?(.finished(item)) }
     }
 
     fileprivate func failed(_ id: String, message: String, canResume: Bool) {
         update(id) { $0.state = canResume ? .paused : .failed(message) }
+        speeds[id] = nil
+        lastPublished[id] = nil
+        if !canResume, let item = items[id] { onEvent?(.failed(item, message)) }
     }
 
     fileprivate func finishBackgroundEvents() {
