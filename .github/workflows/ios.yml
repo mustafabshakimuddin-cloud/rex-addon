@@ -218,7 +218,7 @@ jobs:
             FIRST=1
             # Every launch passes -ReelShot, which also keeps first-run setup from covering the
             # screen ("home" opens nothing else; "setup" shows setup itself).
-            for SCREEN in home setup detail sources player movies calendar library downloads history person settings status; do
+            for SCREEN in home setup detail sources player movies series calendar library history person settings status; do
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
               limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
               if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi

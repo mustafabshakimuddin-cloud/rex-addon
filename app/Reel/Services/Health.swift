@@ -103,8 +103,9 @@ final class HealthModel: ObservableObject {
         defer { isRunning = false; ranAt = Date() }
 
         // Instant checks first, so the page fills straight away.
-        var instant: [HealthCheck] = [streamingCheck(settings), traktCheck(trakt), downloadsCheck(downloads),
-                                      storageCheck(downloads), historyCheck(memory)]
+        var instant: [HealthCheck] = [streamingCheck(settings), rulesCheck(settings), historyCheck(memory), traktCheck(trakt)]
+        // Offline copies are an extra; their checks only appear once there are some.
+        if !downloads.items.isEmpty { instant += [downloadsCheck(downloads), storageCheck(downloads)] }
         if !settings.setupFinished {
             instant.insert(HealthCheck(id: "setup", title: "Setup", systemImage: "wand.and.stars", level: .notSet,
                                        detail: "Setup was not finished.", advice: "Run setup to choose how titles play.",
@@ -159,6 +160,25 @@ final class HealthModel: ObservableObject {
         if addons > 0 { parts.append(addons == 1 ? "1 addon" : "\(addons) addons") }
         return HealthCheck(id: "streaming", title: "Streaming", systemImage: "play.rectangle", level: .ok,
                            detail: "Plays through \(parts.joined(separator: " and ")).")
+    }
+
+    /// What decides which release plays, in a line. Warns when Play may pick a release the
+    /// debrid service still has to fetch, which won't start until it has.
+    private func rulesCheck(_ settings: AppSettings) -> HealthCheck {
+        var parts: [String] = [settings.autoPlayBest ? "Play starts the best source" : "Play lists sources to pick from"]
+        if settings.maxSizeGB > 0 { parts.append("up to \(settings.maxSizeGB) GB") }
+        if !settings.excludedQualities.isEmpty {
+            parts.append("hides " + settings.excludedQualities.map(SettingsView.qualityLabel).joined(separator: ", "))
+        }
+        if settings.isDebridConfigured && !settings.cachedOnly {
+            return HealthCheck(id: "rules", title: "Pick rules", systemImage: "slider.horizontal.3", level: .warning,
+                               detail: "Instant only is off, so the list includes releases \(settings.debridService.name) hasn't cached. Those don't stream until the service has fetched them.",
+                               advice: "Turn on Instant sources only for streams that start straight away.",
+                               fix: .settings(.pickRules), fixTitle: "Pick Rules")
+        }
+        return HealthCheck(id: "rules", title: "Pick rules", systemImage: "slider.horizontal.3", level: .ok,
+                           detail: (settings.isDebridConfigured ? "Instant only; " : "") + parts.joined(separator: ", ") + ".",
+                           fix: .settings(.pickRules), fixTitle: "Pick Rules")
     }
 
     private func debridCheck(_ config: TorrentioConfig) async -> HealthCheck? {
@@ -226,7 +246,7 @@ final class HealthModel: ObservableObject {
     private func downloadsCheck(_ downloads: DownloadStore) -> HealthCheck {
         let failed = downloads.problems.count, paused = downloads.paused.count, active = downloads.active.count
         if failed > 0 {
-            return HealthCheck(id: "downloads", title: "Downloads", systemImage: "arrow.down.circle", level: .warning,
+            return HealthCheck(id: "downloads", title: "Offline copies", systemImage: "arrow.down.circle", level: .warning,
                                detail: failed == 1 ? "1 download failed." : "\(failed) downloads failed.",
                                advice: "Retry them in Downloads; a fresh link is fetched if the old one expired.",
                                fix: .downloads, fixTitle: "Downloads")
@@ -234,9 +254,8 @@ final class HealthModel: ObservableObject {
         var parts: [String] = ["\(downloads.finished.count) saved"]
         if active > 0 { parts.append("\(active) downloading") }
         if paused > 0 { parts.append("\(paused) paused") }
-        return HealthCheck(id: "downloads", title: "Downloads", systemImage: "arrow.down.circle", level: .ok,
-                           detail: parts.joined(separator: ", ") + ".", fix: downloads.items.isEmpty ? nil : .downloads,
-                           fixTitle: downloads.items.isEmpty ? nil : "Downloads")
+        return HealthCheck(id: "downloads", title: "Offline copies", systemImage: "arrow.down.circle", level: .ok,
+                           detail: parts.joined(separator: ", ") + ".", fix: .downloads, fixTitle: "Downloads")
     }
 
     private func storageCheck(_ downloads: DownloadStore) -> HealthCheck {

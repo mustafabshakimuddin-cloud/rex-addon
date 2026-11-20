@@ -66,7 +66,7 @@ struct SetupView: View {
                 bullet("magnifyingglass", "Explore what's popular, new and top rated")
                 bullet("bolt.fill", "Play the best instant source in one tap")
                 bullet("calendar", "Follow series and see new episodes on Calendar")
-                bullet("arrow.down.circle", "Download for offline viewing")
+                bullet("arrow.triangle.2.circlepath", "Pick up where you left off, in step with Trakt")
             }
             .padding(18)
             .glassEffect(.regular, in: .rect(cornerRadius: 22))

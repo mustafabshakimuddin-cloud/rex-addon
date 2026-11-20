@@ -96,13 +96,12 @@ struct RootView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var playback: PlaybackCenter
     @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var downloads: DownloadStore
     @EnvironmentObject private var trakt: TraktStore
     @EnvironmentObject private var alerts: AlertCenter
     @EnvironmentObject private var upcoming: UpcomingStore
 
     var body: some View {
-        let attention = Attention(settings: settings, library: library, downloads: downloads, trakt: trakt, upcoming: upcoming)
+        let attention = Attention(settings: settings, library: library, trakt: trakt, upcoming: upcoming)
         // A system TabView, not a hand-drawn bar: iOS 27 gives it Liquid Glass, and on the
         // unfolded iPhone Duo (and iPad) the adaptable style turns it into a side rail/sidebar.
         TabView(selection: $router.tab) {
@@ -119,7 +118,6 @@ struct RootView: View {
             Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.library) {
                 NavigationStack(path: $router.libraryPath) { LibraryView().appDestinations() }
             }
-            .badge(downloads.active.count)
             Tab(value: AppTab.search, role: .search) {
                 NavigationStack { SearchView().appDestinations() }
             }
@@ -284,7 +282,6 @@ struct AppCommands: Commands {
             Button("Library") { router.tab = .library }.keyboardShortcut("4")
             Button("Search") { router.tab = .search }.keyboardShortcut("f")
             Divider()
-            Button("Downloads") { router.openLibrary(.downloads) }.keyboardShortcut("d", modifiers: [.command, .shift])
             Button("History") { router.openLibrary(.history) }.keyboardShortcut("y")
             Button("Status") { router.openSettings(.status) }.keyboardShortcut("s", modifiers: [.command, .shift])
         }

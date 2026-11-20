@@ -61,7 +61,7 @@ struct HomeView: View {
 
     var body: some View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
-        let attention = Attention(settings: settings, library: library, downloads: downloads, trakt: trakt, upcoming: upcoming)
+        let attention = Attention(settings: settings, library: library, trakt: trakt, upcoming: upcoming)
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 30) {
                 if !heroFirst {

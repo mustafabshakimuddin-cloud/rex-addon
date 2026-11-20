@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// Everything waiting on you, gathered from the stores that know about it. Home shows these as
-/// cards; the count of those that need you is the red badge on the Home tab.
+/// What's waiting on you before the next thing plays: setup that stops streaming, a stopped
+/// sync, new episodes of what you follow. Home shows these as cards; the count of those that need
+/// you is the red badge on the Home tab. Downloads are an occasional extra and stay out of it:
+/// their pop-up alerts say when one finishes or fails.
 struct Attention {
     struct Item: Identifiable {
-        enum Action { case setup, settings(SettingsPage), downloads, calendar }
+        enum Action { case setup, settings(SettingsPage), calendar }
 
         let id: String
         let title: String
@@ -20,7 +22,7 @@ struct Attention {
     let items: [Item]
 
     @MainActor
-    init(settings: AppSettings, library: Library, downloads: DownloadStore, trakt: TraktStore, upcoming: UpcomingStore) {
+    init(settings: AppSettings, library: Library, trakt: TraktStore, upcoming: UpcomingStore) {
         var items: [Item] = []
         if !settings.canFindSources {
             items.append(Item(id: "setup", title: "Finish setting up",
@@ -32,33 +34,11 @@ struct Attention {
                               systemImage: "arrow.triangle.2.circlepath", tint: Theme.warning, needsYou: true,
                               action: .settings(.trakt)))
         }
-        let failed = downloads.problems
-        if !failed.isEmpty {
-            items.append(Item(id: "downloads.failed", title: failed.count == 1 ? "A download failed" : "\(failed.count) downloads failed",
-                              detail: failed.map(\.target.displayTitle).prefix(2).joined(separator: ", "),
-                              systemImage: "exclamationmark.arrow.triangle.2.circlepath", tint: Theme.problem, needsYou: true,
-                              action: .downloads))
-        }
         let fresh = upcoming.newEpisodes(library)
         if !fresh.isEmpty {
             items.append(Item(id: "episodes.new", title: fresh.count == 1 ? "1 new episode" : "\(fresh.count) new episodes",
                               detail: fresh.map(\.item.name).prefix(3).joined(separator: ", "),
                               systemImage: "sparkles.tv", tint: Theme.accent, needsYou: true, action: .calendar))
-        }
-        let active = downloads.active
-        if !active.isEmpty {
-            let written = active.reduce(Int64(0)) { $0 + $1.written }
-            let expected = active.reduce(Int64(0)) { $0 + $1.expected }
-            items.append(Item(id: "downloads.active", title: active.count == 1 ? "Downloading 1 title" : "Downloading \(active.count) titles",
-                              detail: active.map(\.target.displayTitle).prefix(2).joined(separator: ", "),
-                              systemImage: "arrow.down.circle", tint: Theme.accent, needsYou: false, action: .downloads,
-                              progress: expected > 0 ? Double(written) / Double(expected) : nil))
-        }
-        let paused = downloads.paused
-        if !paused.isEmpty {
-            items.append(Item(id: "downloads.paused", title: paused.count == 1 ? "1 download paused" : "\(paused.count) downloads paused",
-                              detail: "Resume in Downloads.", systemImage: "pause.circle", tint: Theme.secondaryText,
-                              needsYou: false, action: .downloads))
         }
         let today = upcoming.airingToday.filter { !$0.hasAired }
         if !today.isEmpty {
@@ -136,7 +116,6 @@ struct AttentionStrip: View {
         switch action {
         case .setup: router.openSetup()
         case let .settings(page): router.openSettings(page)
-        case .downloads: router.homePath.append(LibraryPage.downloads)
         case .calendar: router.tab = .calendar
         }
     }

@@ -107,23 +107,27 @@ struct LibraryView: View {
 
     // MARK: Quick links
 
+    /// History and Calendar; Downloads joins them only once something has been saved for
+    /// offline, since streaming is what the app is for.
     private var quickLinks: some View {
         let failed = !downloads.problems.isEmpty
         let downloadDetail: String = {
             if !downloads.active.isEmpty { return "\(downloads.active.count) downloading" }
             if failed { return "\(downloads.problems.count) failed" }
-            return downloads.items.isEmpty ? "None yet" : "\(downloads.finished.count) saved"
+            return "\(downloads.finished.count) saved offline"
         }()
         return LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
-            NavigationLink(value: LibraryPage.downloads) {
-                linkTile("Downloads", detail: downloadDetail, systemImage: "arrow.down.circle.fill", dot: failed)
-            }
             NavigationLink(value: LibraryPage.history) {
-                linkTile("History", detail: library.history.isEmpty ? "Nothing yet" : "\(library.history.count) watched", systemImage: "clock.fill")
+                linkTile("History", detail: library.history.isEmpty ? "Nothing yet" : "\(library.history.count) played", systemImage: "clock.fill")
             }
             Button { router.tab = .calendar } label: {
                 let next = upcoming.upcoming.first
                 linkTile("Calendar", detail: next.map { "Next: \($0.item.name)" } ?? "Upcoming episodes", systemImage: "calendar")
+            }
+            if !downloads.items.isEmpty {
+                NavigationLink(value: LibraryPage.downloads) {
+                    linkTile("Offline", detail: downloadDetail, systemImage: "arrow.down.circle.fill", dot: failed)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -297,8 +301,9 @@ struct LibraryOverview: View {
                 tile(hoursWatched >= 10 ? "\(Int(hoursWatched))" : String(format: "%.1f", hoursWatched), "Hours watched", "clock")
                 tile("\(thisWeek)", "Played this week", "calendar")
                 tile("\(upcoming.upcoming.count)", "Episodes coming", "calendar.badge.clock")
-                tile("\(downloads.finished.count)", "Downloads", "arrow.down.circle")
-                tile(ByteCountFormatter.string(fromByteCount: downloads.usedBytes, countStyle: .file), "Saved on device", "internaldrive")
+                if !downloads.items.isEmpty {
+                    tile("\(downloads.finished.count)", "Saved offline", "arrow.down.circle")
+                }
             }
             if !genres.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {

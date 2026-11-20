@@ -38,19 +38,19 @@ playback uses succeeded (search, then resolve an instant source).
 
 ## Screens
 
-- **Home**: the featured carousel, then *Waiting on You* (setup to finish, failed downloads, a
-  stopped Trakt sync, new episodes, downloads in progress), Continue Watching, New Episodes,
+- **Home**: the featured carousel, then *Waiting on You* (setup that stops anything streaming, a
+  stopped Trakt sync, new episodes, episodes airing today), Continue Watching, New Episodes,
   My List and catalogue rows. A red badge on the tab counts what needs you; a red dot on the gear
   means Settings has something to fix. Choose and reorder sections under Settings → Home Screen.
 - **Explore**: movies and series in one place. *Rows* shows a shelf per list and genre, each with
   See All; *Grid* shows one list (Popular, New by year, Top Rated) with its filters.
 - **Calendar**: new and upcoming episodes of the series in My List and those you've watched lately,
   by day, as *Cards* or a *List*; *Recent* looks back a month.
-- **Library**: Downloads, History and Calendar at the top, Continue Watching, then My List as
-  *Posters*, *Rows*, *Banners* or an *Overview* of counts, hours watched and your genres. Filter and
-  sort it.
-- **Downloads**: one live list with total progress, speed, time left and storage, filtered by
-  Active, Saved and Problems; pause or resume everything, or delete what you've watched.
+- **Library**: History and Calendar at the top, Continue Watching, then My List as *Posters*,
+  *Rows*, *Banners* or an *Overview* of counts, hours watched and your genres. Filter and sort it.
+- **Offline copies**: streaming is the point; a download is an occasional extra for a flight. Once
+  one exists, Library links to a live list with progress, speed, time left and storage, where
+  everything can be paused, resumed, or deleted once watched.
 - **History**: what you've played, grouped by day, with watched marks and resume points.
 - **Search**: recent searches, a top result, and a *People* scope that finds titles by cast or
   director. Cast and directors on title pages open the same person page.
@@ -59,15 +59,14 @@ playback uses succeeded (search, then resolve an instant source).
   Like This.
 - **Sources**: the pick rules in force, with a link to change them, and how many releases are
   instant and which addons they came from.
-- **Settings → Status**: every link in the chain is checked (debrid key, Torrentio, Cinemeta, each
-  addon, Trakt, downloads, storage) and marked OK, WARN, FAIL or Not set, each with what to do and a
-  button to go there. Recent alerts are listed below; the report can be shared.
+- **Settings → Status**: every link in the streaming chain is checked (debrid key, Torrentio,
+  Cinemeta, each addon, pick rules, Trakt; offline copies and storage only when there are some) and
+  marked OK, WARN, FAIL or Not set, each with what to do and a button to go there. Recent alerts are listed below; the report can be shared.
 - **Settings → Appearance**: accent colour, poster size, ratings on posters and whether the featured
   row moves by itself.
-- **Alerts**: a pop-up when a download finishes or fails or Trakt stops syncing, with a button to
-  the right place.
-- **Keyboard** (iPad): ⌘1–4 switch tabs, ⌘F searches, ⌘Y opens History, ⇧⌘D Downloads, ⇧⌘S Status,
-  ⌘, Settings.
+- **Alerts**: a pop-up when Trakt stops syncing or an offline copy finishes or fails, with a button
+  to the right place.
+- **Keyboard** (iPad): ⌘1–4 switch tabs, ⌘F searches, ⌘Y opens History, ⇧⌘S Status, ⌘, Settings.
 
 ## How playing works
 
