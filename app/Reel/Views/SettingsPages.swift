@@ -41,6 +41,10 @@ struct AddonsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(addon.name)
                             Text(URL(string: addon.base)?.host ?? addon.base).font(.caption).foregroundStyle(Theme.secondaryText)
+                            if addon.base.hasPrefix("http://") {
+                                Label("Not encrypted: its links, and any key in them, travel in the clear.", systemImage: "lock.open")
+                                    .font(.caption2).foregroundStyle(Theme.warning)
+                            }
                         }
                     }
                 }

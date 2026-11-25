@@ -107,6 +107,13 @@ struct CalendarView: View {
                 }
                 .pickerStyle(.menu)
             }
+            if !upcoming.upcoming.isEmpty, let file = CalendarExport.write(upcoming.upcoming) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: file, preview: SharePreview("Upcoming episodes")) {
+                        Label("Add to Calendar", systemImage: "calendar.badge.plus")
+                    }
+                }
+            }
         }
         .refreshable { await upcoming.refresh(library, force: true) }
     }

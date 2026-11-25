@@ -22,12 +22,17 @@ struct SubtitleAppearance: Equatable {
     var scale: Double = 1
     var style: SubtitleStyle = .outline
     var color: SubtitleColor = .white
+    var lift: Double = 0
+    var boxOpacity: Double = 0.72
+    var followsTextSize = false
 
     var foreground: Color {
         switch color {
         case .white: return .white
         case .yellow: return Color(red: 1, green: 0.92, blue: 0.3)
         case .cyan: return Color(red: 0.55, green: 0.95, blue: 1)
+        case .green: return Color(red: 0.6, green: 1, blue: 0.6)
+        case .pink: return Color(red: 1, green: 0.7, blue: 0.85)
         }
     }
 }
@@ -36,6 +41,7 @@ private struct SubtitleLayer: View {
     let cues: [SubtitleCue]
     var bottomInset: CGFloat
     var appearance: SubtitleAppearance
+    @ScaledMetric(relativeTo: .body) private var textSizeFactor: CGFloat = 1
 
     var body: some View {
         GeometryReader { proxy in
@@ -51,7 +57,7 @@ private struct SubtitleLayer: View {
                     }
                     .frame(maxWidth: proxy.size.width * 0.86)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: frameAlignment(group.alignment))
-                    .padding(.bottom, group.alignment <= 3 ? bottomInset : 0)
+                    .padding(.bottom, group.alignment <= 3 ? bottomInset + appearance.lift : 0)
                     .padding(.top, group.alignment >= 7 ? 24 : 0)
                     .padding(.horizontal, 16)
                 }
@@ -99,10 +105,10 @@ private struct SubtitleLayer: View {
                 EmptyView()
             }
         }
-        .font(.system(size: size * appearance.scale, weight: .semibold))
+        .font(.system(size: size * appearance.scale * (appearance.followsTextSize ? min(textSizeFactor, 2) : 1), weight: .semibold))
         .foregroundStyle(appearance.foreground)
         .multilineTextAlignment(.center)
-        .modifier(SubtitleBacking(style: appearance.style))
+        .modifier(SubtitleBacking(style: appearance.style, boxOpacity: appearance.boxOpacity))
         .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -146,6 +152,7 @@ private struct SubtitleLayer: View {
 
 private struct SubtitleBacking: ViewModifier {
     let style: SubtitleStyle
+    var boxOpacity: Double = 0.72
 
     func body(content: Content) -> some View {
         switch style {
@@ -160,7 +167,7 @@ private struct SubtitleBacking: ViewModifier {
         case .box:
             content
                 .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(.black.opacity(boxOpacity), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
     }
 }

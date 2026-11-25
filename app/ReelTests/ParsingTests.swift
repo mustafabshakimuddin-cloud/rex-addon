@@ -129,3 +129,28 @@ struct ParsingTests {
         #expect(!DebridAccount.supports(.offcloud))
     }
 }
+
+struct ExportTests {
+    @Test func calendarFile() {
+        let show = MediaItem(id: "tt0903747", kind: .series, name: "Breaking, Bad")
+        let episode = Episode(id: "tt0903747:1:1", season: 1, number: 1, title: "Pilot; Part 1",
+                              released: Date(timeIntervalSince1970: 1_800_000_000))
+        let text = CalendarExport.ics([CalendarEpisode(item: show, episode: episode, date: episode.released!)])
+        #expect(text.hasPrefix("BEGIN:VCALENDAR\r\n"))
+        #expect(text.contains(#"SUMMARY:Breaking\, Bad S01E01"#))
+        #expect(text.contains(#"DESCRIPTION:Pilot\; Part 1"#))
+        #expect(text.contains("DTSTART;VALUE=DATE:20270115"))
+        #expect(text.hasSuffix("END:VCALENDAR\r\n"))
+    }
+
+    @Test func flagsCountAsLanguage() {
+        var raw = StremioStreams.RawStream()
+        raw.name = "[RD+] Torrentio\n1080p"
+        raw.title = "Film.2020.1080p-GRP\n👤 5 💾 2 GB ⚙️ YTS\n🇩🇪 / 🇬🇧"
+        raw.url = "https://example.com/x"
+        let source = raw.source(index: 0, addon: "Torrentio", addonHost: nil)!
+        #expect(source.languages == "🇩🇪 / 🇬🇧")
+        #expect(SourcePreferences.mentions(language: "ger", in: source))
+        #expect(!SourcePreferences.mentions(language: "fre", in: source))
+    }
+}

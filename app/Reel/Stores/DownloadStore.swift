@@ -57,6 +57,7 @@ final class DownloadStore: ObservableObject {
             self.subtitleLanguages = subtitleLanguages
         }
 
+        @MainActor
         init(_ settings: AppSettings) {
             allowsCellular = settings.downloadsOverCellular
             subtitleLanguages = settings.downloadSubtitles ? Languages.codes(for: settings.preferredSubtitleLanguage) : []

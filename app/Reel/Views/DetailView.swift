@@ -39,6 +39,7 @@ struct DetailView: View {
     @EnvironmentObject private var playback: PlaybackCenter
     @EnvironmentObject private var downloads: DownloadStore
     @EnvironmentObject private var upcoming: UpcomingStore
+    @EnvironmentObject private var trakt: TraktStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
     @StateObject private var model = DetailModel()
@@ -251,6 +252,10 @@ struct DetailView: View {
         return "\(verb) \(episode.code)"
     }
 
+    static func ratingWord(_ value: Int) -> String {
+        ["", "Weak sauce", "Terrible", "Bad", "Poor", "Meh", "Fair", "Good", "Great", "Superb", "Totally ninja!"][value]
+    }
+
     /// Share, IMDb and watched state: what the toolbar's "…" holds.
     private var moreMenu: some View {
         Menu {
@@ -266,6 +271,17 @@ struct DetailView: View {
                 let aired = detail.episodes.filter { $0.season > 0 && $0.hasAired }
                 Button { library.markWatched(aired, of: shown) } label: { Label("Mark All Aired as Watched", systemImage: "checkmark.circle") }
                 Button { library.markUnwatched(detail.episodes, of: shown) } label: { Label("Mark All as Unwatched", systemImage: "circle") }
+            }
+            if trakt.isConnected {
+                Menu {
+                    ForEach((1...10).reversed(), id: \.self) { value in
+                        Button("\(value) – \(Self.ratingWord(value))") { trakt.rate(shown, rating: value) }
+                    }
+                    Divider()
+                    Button("Remove Rating", role: .destructive) { trakt.rate(shown, rating: 0) }
+                } label: {
+                    Label("Rate on Trakt", systemImage: "star")
+                }
             }
             Divider()
             if let imdb = URL(string: "https://www.imdb.com/title/\(shown.id)/") {
@@ -352,6 +368,20 @@ struct DetailView: View {
                     }
                     Divider()
                     let episodes = detail.episodes(in: model.season)
+                    let toSave = episodes.filter { $0.hasAired && downloads.item(for: PlaybackTarget(item: shown, episode: $0)) == nil }
+                    if !toSave.isEmpty {
+                        Button { playback.download(toSave, of: shown, settings: settings) } label: {
+                            Label("Download Season (\(toSave.count))", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    if let next = library.nextEpisode(in: detail) {
+                        let following = detail.episodes.filter { $0.season > 0 && $0.hasAired }
+                            .sorted { ($0.season, $0.number) < ($1.season, $1.number) }
+                            .drop { $0.id != next.id }.prefix(3)
+                        Button { playback.download(Array(following), of: shown, settings: settings) } label: {
+                            Label("Download Next \(following.count) Episodes", systemImage: "arrow.down.to.line.circle")
+                        }
+                    }
                     if episodes.filter(\.hasAired).allSatisfy({ library.isWatched($0) }) {
                         Button { library.markUnwatched(episodes, of: shown) } label: { Label("Mark Season as Unwatched", systemImage: "circle") }
                     } else {

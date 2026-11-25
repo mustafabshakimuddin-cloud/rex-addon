@@ -71,6 +71,17 @@ final class AppRouter: ObservableObject {
         next?()
     }
 
+    /// Words for Search to look up, from a shortcut; Search takes them when it appears.
+    @Published var pendingSearch: String?
+
+    func search(_ text: String) {
+        closeSettings {
+            self.searchPath = NavigationPath()
+            self.tab = .search
+            self.pendingSearch = text
+        }
+    }
+
     /// Opens a title from a link or a shortcut, on the Home tab.
     func open(_ item: MediaItem) {
         closeSettings {

@@ -346,6 +346,7 @@ struct CatalogGridView: View {
 
 struct SearchView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -365,6 +366,14 @@ struct SearchView: View {
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
 
+    /// An IMDb link or id pasted into the field: open that title directly.
+    private var linkedTitle: MediaItem? {
+        guard let range = trimmed.range(of: #"tt\d{5,10}"#, options: .regularExpression) else { return nil }
+        let id = String(trimmed[range])
+        let kind: MediaKind = series.contains { $0.id == id } ? .series : .movie
+        return MediaItem.placeholder(id: id, kind: kind)
+    }
+
     /// The likeliest match: a title named exactly as typed, otherwise the first one found.
     private var topResult: MediaItem? {
         let all = movies + series
@@ -380,6 +389,17 @@ struct SearchView: View {
                 } else if scope == .people {
                     PersonResults(name: trimmed)
                 } else {
+                    if let link = linkedTitle {
+                        NavigationLink(value: link) {
+                            Label("Open \(link.id) from the link", systemImage: "link")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(14)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 20)
+                    }
                     if let searchError, !isSearching {
                         StateMessage(title: "Couldn't search", message: searchError, systemImage: "wifi.exclamationmark", actionTitle: "Retry") {
                             attempt += 1
@@ -418,6 +438,11 @@ struct SearchView: View {
             ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
         }
         .onSubmit(of: .search) { settings.rememberSearch(query) }
+        .onChange(of: router.pendingSearch, initial: true) { _, text in
+            guard let text else { return }
+            query = text
+            router.pendingSearch = nil
+        }
         .task(id: "\(query)|\(attempt)") {
             let text = query
             searchError = nil

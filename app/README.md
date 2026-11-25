@@ -39,8 +39,9 @@ playback uses succeeded (search, then resolve an instant source).
 ## Screens
 
 - **Home**: the featured carousel, then *Waiting on You* (setup that stops anything streaming, a
-  stopped Trakt sync, new episodes, episodes airing today), Continue Watching, New Episodes,
-  My List and catalogue rows. A red badge on the tab counts what needs you; a red dot on the gear
+  stopped Trakt sync, a debrid plan about to end, new episodes, episodes airing today), Continue
+  Watching (with the next episode once you finish one), New Episodes, My List, catalogue rows and,
+  with Trakt connected, trending and recommended rows. A red badge on the tab counts what needs you; a red dot on the gear
   means Settings has something to fix. Choose and reorder sections under Settings → Home Screen.
 - **Explore**: movies and series in one place. *Rows* shows a shelf per list and genre, each with
   See All; *Grid* shows one list (Popular, New by year, Top Rated) with its filters.
@@ -67,13 +68,28 @@ playback uses succeeded (search, then resolve an instant source).
 - **Alerts**: a pop-up when Trakt stops syncing or an offline copy finishes or fails, with a button
   to the right place.
 - **Keyboard** (iPad): ⌘1–4 switch tabs, ⌘F searches, ⌘Y opens History, ⇧⌘S Status, ⌘, Settings.
+  Tapping the current tab again goes back to its first screen, then to the top.
+- **Outside the app**: notifications for new episodes and finished downloads; My List in Spotlight;
+  Handoff of the title on screen; Shortcuts for *Resume Watching* and *Search*; links of the form
+  `reel://title/tt0111161?type=movie`, and IMDb links pasted into Search; upcoming episodes
+  exported to Calendar.
 
 ## How playing works
 
 **Play** asks Torrentio for releases, takes the first *instant* (already cached) one, asks the
-debrid service to prepare it through Torrentio's resolve link, and hands VLC the final direct HTTPS
-address. If a release fails it tries the next, up to three. **Sources** lists everything with
-quality, HDR/Dolby Vision tags, size, seeders and provider, to pick one yourself.
+debrid service to prepare it through Torrentio's resolve link, and hands the player (AetherEngine)
+the final direct HTTPS address. If a release fails it tries the next, up to three; being offline
+doesn't count against a release. If a link expires mid-film, the same release is resolved again
+and playback carries on where it stopped. **Sources** lists everything with quality, HDR/Dolby
+Vision tags, size, seeders and provider, with a search field and tag filters, to pick one yourself.
+
+Within a quality, **source preferences** decide (Settings → Pick Rules): HDR, Dolby Vision, Atmos
+and remuxes can be preferred or avoided, release groups favoured, releases in your audio language
+put first, and formats this device can't show or decode in hardware passed over.
+
+The debrid key is checked against the service's own account page (Real-Debrid, AllDebrid,
+Premiumize, TorBox, Debrid-Link, Put.io), which adds nothing to the account and tells the app when
+the plan ends; Home warns a week before.
 
 Torrentio's resolve links redirect to short explanatory videos when something is wrong (key
 refused, not cached yet, file too big). The app reads the redirect itself and shows the reason as a
@@ -103,5 +119,23 @@ The icon is drawn by `tools/make_icon.py`.
 
 ## Licences
 
-VLCKit is LGPL 2.1 and is linked as the `VLCKitSPM` binary package. Cinemeta and Torrentio are
-third-party services; the app hosts and stores no media.
+AetherEngine is LGPL 3 with an App Store exception and bundles FFmpeg (LGPL). Cinemeta, Torrentio,
+OpenSubtitles and Trakt are third-party services; the app hosts and stores no media.
+
+## Player
+
+Double-tap the left or right of the picture to skip 10 seconds, the middle to fill; pinch to fill
+or fit; hold for double speed. On a keyboard: space, ←/→ (⇧ for a minute), F, C, Esc. A sleep
+timer is under Speed. Each series remembers its audio and subtitle language, subtitle timing,
+fill and speed, and an intro you scrub past is offered as Skip Intro in the next episodes.
+
+## Saved data
+
+The library, source memory, downloads index and pending Trakt changes are JSON files in
+Application Support. A file that can't be read is renamed `*.unreadable-<date>.json` and kept,
+never overwritten. Settings → Back Up and Restore writes everything but credentials to one file.
+
+## Tests
+
+`ReelTests` covers release parsing, ranking, Torrentio options, redaction and the library's rules
+(unaired episodes, Up Next, Trakt merges). CI runs it on a simulator.

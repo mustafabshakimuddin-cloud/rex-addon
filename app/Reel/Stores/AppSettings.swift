@@ -27,6 +27,17 @@ final class AppSettings: ObservableObject {
     @Published var subtitleScale: Double { didSet { defaults.set(subtitleScale, forKey: Keys.subtitleScale) } }
     @Published var subtitleStyle: SubtitleStyle { didSet { defaults.set(subtitleStyle.rawValue, forKey: Keys.subtitleStyle) } }
     @Published var subtitleColor: SubtitleColor { didSet { defaults.set(subtitleColor.rawValue, forKey: Keys.subtitleColor) } }
+    /// How far above the bottom of the picture text subtitles sit, in points beyond the default.
+    @Published var subtitleLift: Double { didSet { defaults.set(subtitleLift, forKey: Keys.subtitleLift) } }
+    /// How dark the box is behind text subtitles in the "Dark box" style.
+    @Published var subtitleBoxOpacity: Double { didSet { defaults.set(subtitleBoxOpacity, forKey: Keys.subtitleBoxOpacity) } }
+    /// Grow subtitles with the system text size.
+    @Published var subtitleFollowsTextSize: Bool { didSet { defaults.set(subtitleFollowsTextSize, forKey: Keys.subtitleDynamicType) } }
+
+    var subtitleAppearance: SubtitleAppearance {
+        SubtitleAppearance(scale: subtitleScale, style: subtitleStyle, color: subtitleColor, lift: subtitleLift,
+                           boxOpacity: subtitleBoxOpacity, followsTextSize: subtitleFollowsTextSize)
+    }
     /// Search OpenSubtitles when a file has no subtitles in the preferred language.
     @Published var searchOnlineSubtitles: Bool { didSet { defaults.set(searchOnlineSubtitles, forKey: Keys.onlineSubtitles) } }
     /// Show Skip Intro / Skip Credits when the file's chapters name them.
@@ -113,6 +124,9 @@ final class AppSettings: ObservableObject {
         subtitleScale = defaults.object(forKey: Keys.subtitleScale) as? Double ?? 1
         subtitleStyle = SubtitleStyle(rawValue: defaults.string(forKey: Keys.subtitleStyle) ?? "") ?? .outline
         subtitleColor = SubtitleColor(rawValue: defaults.string(forKey: Keys.subtitleColor) ?? "") ?? .white
+        subtitleLift = defaults.object(forKey: Keys.subtitleLift) as? Double ?? 0
+        subtitleBoxOpacity = defaults.object(forKey: Keys.subtitleBoxOpacity) as? Double ?? 0.72
+        subtitleFollowsTextSize = defaults.object(forKey: Keys.subtitleDynamicType) as? Bool ?? false
         searchOnlineSubtitles = defaults.object(forKey: Keys.onlineSubtitles) as? Bool ?? true
         showSkipButtons = defaults.object(forKey: Keys.skipButtons) as? Bool ?? true
         autoPlayNext = defaults.object(forKey: Keys.autoPlayNext) as? Bool ?? true
@@ -225,6 +239,9 @@ final class AppSettings: ObservableObject {
         static let subtitleScale = "subtitles.scale"
         static let subtitleStyle = "subtitles.style"
         static let subtitleColor = "subtitles.color"
+        static let subtitleLift = "subtitles.lift"
+        static let subtitleBoxOpacity = "subtitles.boxOpacity"
+        static let subtitleDynamicType = "subtitles.dynamicType"
         static let onlineSubtitles = "subtitles.online"
         static let skipButtons = "player.skipButtons"
         static let autoPlayNext = "player.autoPlayNext"
@@ -273,7 +290,7 @@ enum SubtitleStyle: String, CaseIterable, Identifiable {
 }
 
 enum SubtitleColor: String, CaseIterable, Identifiable {
-    case white, yellow, cyan
+    case white, yellow, cyan, green, pink
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
 }
@@ -296,6 +313,7 @@ enum HomeSection: String, CaseIterable, Identifiable, Codable {
     case hero, waiting, continueWatching, newEpisodes, myList
     case popularMovies, popularSeries, newMovies, topMovies, topSeries, newSeries
     case sciFi, animation, crimeSeries, comedy
+    case trendingMovies, trendingSeries, recommendedMovies, recommendedSeries
 
     var id: String { rawValue }
 
@@ -316,6 +334,10 @@ enum HomeSection: String, CaseIterable, Identifiable, Codable {
         case .animation: return "Animation"
         case .crimeSeries: return "Crime Series"
         case .comedy: return "Comedy"
+        case .trendingMovies: return "Trending Movies"
+        case .trendingSeries: return "Trending Series"
+        case .recommendedMovies: return "Movies for You"
+        case .recommendedSeries: return "Series for You"
         }
     }
 
@@ -326,7 +348,20 @@ enum HomeSection: String, CaseIterable, Identifiable, Codable {
         case .continueWatching: return "play.circle"
         case .newEpisodes: return "calendar.badge.clock"
         case .myList: return "bookmark"
+        case .trendingMovies, .trendingSeries: return "flame"
+        case .recommendedMovies, .recommendedSeries: return "hand.thumbsup"
         default: return catalogue?.0 == .series ? "tv" : "film"
+        }
+    }
+
+    /// What a Trakt row lists; these show once Trakt is connected.
+    var traktList: (Trakt.Discovery, MediaKind)? {
+        switch self {
+        case .trendingMovies: return (.trending, .movie)
+        case .trendingSeries: return (.trending, .series)
+        case .recommendedMovies: return (.recommended, .movie)
+        case .recommendedSeries: return (.recommended, .series)
+        default: return nil
         }
     }
 

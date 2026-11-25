@@ -33,10 +33,25 @@ final class HomeModel: ObservableObject {
         error = rows.isEmpty ? "Couldn't reach the catalogue. Check your connection and pull to refresh." : nil
     }
 
-    func reload(_ sections: [HomeSection]) async {
+    func reload(_ sections: [HomeSection], trakt: TraktStore) async {
         rows = [:]
         hero = []
         await load(sections)
+        await loadTrakt(sections, trakt: trakt, force: true)
+    }
+
+    /// Trakt's trending and recommended rows, when Trakt is connected.
+    func loadTrakt(_ sections: [HomeSection], trakt: TraktStore, force: Bool = false) async {
+        guard trakt.isConnected else { return }
+        let wanted = sections.filter { $0.traktList != nil && (force || rows[$0] == nil) }
+        guard !wanted.isEmpty else { return }
+        var collected: [HomeSection: [MediaItem]] = [:]
+        for section in wanted {
+            guard let (list, kind) = section.traktList,
+                  let items = try? await trakt.discover(list, kind: kind) else { continue }
+            collected[section] = items
+        }
+        rows.merge(collected) { _, new in new }
     }
 }
 
@@ -75,7 +90,7 @@ struct HomeView: View {
 
                 if let error = model.error {
                     StateMessage(title: "Offline", message: error, systemImage: "wifi.slash", actionTitle: "Retry") {
-                        Task { await model.reload(sections) }
+                        Task { await model.reload(sections, trakt: trakt) }
                     }
                 }
                 if sections.isEmpty {
@@ -106,9 +121,13 @@ struct HomeView: View {
             .padding(.trailing, 16)
             .padding(.top, 4)
         }
-        .task(id: sections) { await model.load(sections) }
+        .task(id: sections) {
+            await model.load(sections)
+            await model.loadTrakt(sections, trakt: trakt)
+        }
+        .task(id: trakt.isConnected) { await model.loadTrakt(sections, trakt: trakt) }
         .refreshable {
-            await model.reload(sections)
+            await model.reload(sections, trakt: trakt)
             await upcoming.refresh(library, force: true)
         }
     }
@@ -171,7 +190,13 @@ struct HomeView: View {
                 }
             }
         default:
-            if let items = model.rows[section], !items.isEmpty, let source = section.catalogue {
+            if section.traktList != nil, let items = model.rows[section].map({ library.shown($0, hidingWatched: settings.hideWatched) }), !items.isEmpty {
+                ShelfRow(title: section.title, subtitle: "From Trakt", items: items) { item in
+                    NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
+                        .buttonStyle(.plain)
+                        .contextMenu { TitleContextMenu(item: item) }
+                }
+            } else if let items = model.rows[section].map({ library.shown($0, hidingWatched: settings.hideWatched) }), !items.isEmpty, let source = section.catalogue {
                 ShelfRow(title: section.title, items: items, seeAll: {
                     CatalogGridView(title: section.title, kind: source.0, catalog: source.1, genre: source.2)
                 }) { item in
@@ -220,6 +245,7 @@ struct HeroCarousel: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playback: PlaybackCenter
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: String?
 
     /// Auto-advance only while someone can see it: not in the background, not behind the player.
@@ -274,7 +300,7 @@ struct HeroCarousel: View {
         }
     }
 
-    private var autoAdvance: Bool { settings.heroAutoAdvance && scenePhase == .active && playback.session == nil }
+    private var autoAdvance: Bool { settings.heroAutoAdvance && !reduceMotion && scenePhase == .active && playback.session == nil }
 
     static func subtitle(for item: MediaItem) -> String {
         var parts = [item.kind.singular]

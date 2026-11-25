@@ -145,7 +145,18 @@ struct SettingsView: View {
                 Picker("Colour", selection: $settings.subtitleColor) {
                     ForEach(SubtitleColor.allCases) { Text($0.title).tag($0) }
                 }
-                SubtitlePreview(appearance: SubtitleAppearance(scale: settings.subtitleScale, style: settings.subtitleStyle, color: settings.subtitleColor))
+                if settings.subtitleStyle == .box {
+                    VStack(alignment: .leading) {
+                        LabeledContent("Box", value: "\(Int(settings.subtitleBoxOpacity * 100))%")
+                        Slider(value: $settings.subtitleBoxOpacity, in: 0.3...1, step: 0.05)
+                    }
+                }
+                VStack(alignment: .leading) {
+                    LabeledContent("Height", value: settings.subtitleLift == 0 ? "Default" : "+\(Int(settings.subtitleLift)) pt")
+                    Slider(value: $settings.subtitleLift, in: 0...120, step: 10)
+                }
+                Toggle("Follow the system text size", isOn: $settings.subtitleFollowsTextSize)
+                SubtitlePreview(appearance: settings.subtitleAppearance)
             }
 
             Section {

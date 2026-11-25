@@ -11,6 +11,10 @@ struct ViewingChoice: Codable, Equatable {
     var fillsScreen = false
     var rate: Float = 1
     var updatedAt = Date()
+    /// Where you skipped from and to near the start of an episode, so the next ones can offer
+    /// the same skip when their files don't name an intro chapter.
+    var introStart: Double?
+    var introEnd: Double?
 }
 
 /// Kept in UserDefaults: small, and a lost entry only means the settings' defaults apply.

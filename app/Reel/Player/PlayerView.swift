@@ -24,6 +24,9 @@ struct PlayerView: View {
     /// Which side a double tap skipped, for the brief arrow drawn there.
     @State private var skipFlash: SkipFlash?
     @State private var pinchScale: CGFloat = 1
+    @State private var boostTask: Task<Void, Never>?
+    /// The intro skip learned in an earlier episode, read once when the player opens.
+    @State private var learnedIntro: ViewingChoice?
     @State private var preparedNext = false
 
     struct SkipFlash: Equatable { let forward: Bool; let id = UUID() }
@@ -87,7 +90,17 @@ struct PlayerView: View {
                     .onTapGesture { toggleControls() }
                     .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 30) {
                     } onPressingChanged: { pressing in
-                        if pressing { model.beginBoost() } else { model.endBoost() }
+                        // Pressing starts at touch-down; only a press still held after a moment
+                        // is a hold, so a tap never flickers into double speed.
+                        boostTask?.cancel()
+                        if pressing {
+                            boostTask = Task {
+                                try? await Task.sleep(nanoseconds: 450_000_000)
+                                if !Task.isCancelled { model.beginBoost() }
+                            }
+                        } else {
+                            model.endBoost()
+                        }
                     }
                     .simultaneousGesture(
                         MagnifyGesture()
@@ -228,6 +241,11 @@ struct PlayerView: View {
                 SkipChapterButton(time: model.time, chapters: model.chapters, duration: model.duration,
                                   skipsCredits: nextEpisode == nil) { model.seek(to: $0) }
             }
+            if settings.showSkipButtons, session.target.episode != nil,
+               !model.chapters.contains(where: { ChapterKind($0.name) == .intro }),
+               let learned = learnedIntro, let start = learned.introStart, let end = learned.introEnd {
+                LearnedSkipButton(time: model.time, start: start, end: end) { model.seek(to: $0) }
+            }
             if (settings.autoSkipIntro || settings.autoSkipRecap) && !model.chapters.isEmpty {
                 AutoSkipper(time: model.time, chapters: model.chapters, duration: model.duration,
                             intro: settings.autoSkipIntro, recap: settings.autoSkipRecap) { model.seek(to: $0) }
@@ -254,7 +272,7 @@ struct PlayerView: View {
     }
 
     private var subtitleAppearance: SubtitleAppearance {
-        SubtitleAppearance(scale: settings.subtitleScale, style: settings.subtitleStyle, color: settings.subtitleColor)
+        settings.subtitleAppearance
     }
 
     // MARK: Lifecycle
@@ -263,6 +281,7 @@ struct PlayerView: View {
         let target = session.target
         // The way this film or series was left last time wins over the general settings.
         let choice = ViewingPreferences.choice(for: target.item.id)
+        learnedIntro = choice
         let audio = choice?.audioLanguage.map { Languages.codes(for: $0) } ?? Languages.codes(for: settings.preferredAudioLanguage)
         let subtitles: [String]
         if let chosen = choice?.subtitleLanguage {
@@ -362,13 +381,30 @@ struct PlayerView: View {
     private func rememberChoices() {
         guard model.hasFirstFrame else { return }
         let audio = model.audioTracks.first { $0.id == model.activeAudio }?.language
+        // "Off" is remembered only when subtitles would otherwise have come on by themselves.
+        let wouldAutoplay = settings.autoplaySubtitles
+            && model.subtitleTracks.contains { Languages.matches($0.language ?? "", preferred: settings.preferredSubtitleLanguage) }
         let subtitle: String? = model.activeSubtitle == nil
-            ? (model.subtitleTracks.isEmpty ? nil : "")
+            ? (wouldAutoplay ? "" : nil)
             : model.subtitleTracks.first { $0.id == model.activeSubtitle }?.language
-        let choice = ViewingChoice(audioLanguage: audio.flatMap { $0.isEmpty || $0 == "und" ? nil : $0 },
+        let previous = ViewingPreferences.choice(for: session.target.item.id)
+        var choice = ViewingChoice(audioLanguage: audio.flatMap { $0.isEmpty || $0 == "und" ? nil : $0 },
                                    subtitleLanguage: subtitle.flatMap { $0 == "und" ? nil : $0 },
                                    subtitleDelay: model.subtitleDelay, fillsScreen: model.fillsScreen,
                                    rate: model.boosted ? 1 : model.rate)
+        choice.introStart = previous?.introStart
+        choice.introEnd = previous?.introEnd
+        ViewingPreferences.store(choice, for: session.target.item.id)
+    }
+
+    /// A drag forward of between 20 s and 3 minutes in an episode's first ten minutes is taken as
+    /// skipping its intro, and offered again in the episodes that follow.
+    private func learnIntro(from start: Double, to end: Double) {
+        guard session.target.episode != nil, start < 600, (20...180).contains(end - start) else { return }
+        var choice = ViewingPreferences.choice(for: session.target.item.id) ?? ViewingChoice()
+        choice.introStart = start
+        choice.introEnd = end
+        choice.updatedAt = Date()
         ViewingPreferences.store(choice, for: session.target.item.id)
     }
 
@@ -550,6 +586,7 @@ struct PlayerView: View {
                 scrubbing: scrubbing,
                 onChange: { scrubbing = $0; hideTask?.cancel() },
                 onCommit: { value in
+                    learnIntro(from: model.currentTime, to: value)
                     model.seek(to: value)
                     scrubbing = nil
                     scheduleHide()
@@ -804,7 +841,9 @@ struct Scrubber: View {
         .accessibilityLabel("Playback position")
         .accessibilityValue(PlayerView.clock(value))
         .accessibilityAdjustableAction { direction in
-            onCommit(value + (direction == .increment ? 30 : -30))
+            // About a fortieth of the film per swipe: 30 s steps are tiny across three hours.
+            let step = min(max(duration / 40, 10), 300)
+            onCommit(value + (direction == .increment ? step : -step))
         }
     }
 }
@@ -875,5 +914,25 @@ struct TimeTrigger: View {
                 action()
             }
             .accessibilityHidden(true)
+    }
+}
+
+/// "Skip Intro" from where you skipped in an earlier episode, for files without chapters.
+struct LearnedSkipButton: View {
+    @ObservedObject var time: PlaybackTime
+    let start: Double
+    let end: Double
+    let skip: (Double) -> Void
+
+    var body: some View {
+        let now = time.currentTime
+        // Openings drift by a few seconds between episodes; offer it a little early and late.
+        if now >= max(0, start - 15), now < end - 5 {
+            Button { skip(end) } label: {
+                Label("Skip Intro", systemImage: "forward.end.fill").font(.headline).padding(.horizontal, 6)
+            }
+            .buttonStyle(.glass)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
     }
 }

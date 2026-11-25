@@ -80,6 +80,23 @@ struct PosterCard: View {
         }
         .frame(width: width, alignment: .leading)
         .contentShape(Rectangle())
+        // One element for VoiceOver: the title, its facts and what you've done with it.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        var parts = [item.name]
+        if let year = item.year { parts.append(year) }
+        if let rating = item.rating { parts.append("rated \(rating)") }
+        switch mark {
+        case .watched?: parts.append("watched")
+        case .downloaded?: parts.append("downloaded")
+        case .listed?: parts.append("in My List")
+        case let .progress(fraction)?: parts.append("\(Int(fraction * 100)) percent watched")
+        case nil: break
+        }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder private var markView: some View {
