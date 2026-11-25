@@ -6,12 +6,26 @@ final class DetailModel: ObservableObject {
     @Published var error: String?
     @Published var season: Int = 1
 
-    func load(_ item: MediaItem, library: Library) async {
-        guard detail == nil else { return }
+    @Published var isLoading = false
+
+    func load(_ item: MediaItem, library: Library, force: Bool = false) async {
+        guard detail == nil || force, !isLoading else { return }
+        isLoading = true
+        defer { isLoading = false }
         do {
-            let loaded = try await Cinemeta.detail(item.kind, id: item.id)
+            let loaded: MediaDetail
+            do {
+                loaded = try await Cinemeta.detail(item.kind, id: item.id)
+            } catch HTTPError.status(404, _) where item.name.isEmpty {
+                // A bare link doesn't say whether it is a film or a series: try the other.
+                loaded = try await Cinemeta.detail(item.kind == .movie ? .series : .movie, id: item.id)
+            }
             detail = loaded
-            season = library.nextEpisode(in: loaded)?.season ?? loaded.seasons.first ?? 1
+            error = nil
+            library.learnEpisodes(loaded)
+            let caughtUp = library.caughtUp(in: loaded)
+            season = library.nextEpisode(in: loaded)?.season ?? caughtUp.nextAiring?.season
+                ?? (caughtUp.caughtUp ? loaded.seasons.filter { $0 > 0 }.last : nil) ?? loaded.seasons.first ?? 1
         } catch {
             self.error = error.localizedDescription
         }
@@ -42,12 +56,14 @@ struct DetailView: View {
                 VStack(alignment: .leading, spacing: 26) {
                     libraryState
                     overview
-                    if let detail = model.detail, item.kind == .series, !detail.episodes.isEmpty {
+                    if let detail = model.detail, shown.kind == .series, !detail.episodes.isEmpty {
                         episodesSection(detail)
                     }
                     if let detail = model.detail, !detail.cast.isEmpty || !detail.directors.isEmpty { castSection(detail) }
-                    if let error = model.error {
-                        StateMessage(title: "Couldn't load details", message: error)
+                    if let error = model.error, model.detail == nil {
+                        StateMessage(title: "Couldn't load details", message: error, actionTitle: model.isLoading ? nil : "Retry") {
+                            Task { await model.load(item, library: library, force: true) }
+                        }
                     }
                 }
                 .padding(.horizontal, wide ? 48 : 20)
@@ -76,6 +92,14 @@ struct DetailView: View {
         .task {
             await model.load(item, library: library)
             if let target = primaryTarget { playback.prefetch(target, settings: settings) }
+        }
+        .onDisappear { if let target = primaryTarget { playback.cancelPrefetch(target) } }
+        .userActivity(TitleActivity.type) { activity in
+            activity.title = shown.name
+            activity.userInfo = ["id": shown.id, "kind": shown.kind.rawValue]
+            activity.isEligibleForHandoff = true
+            activity.isEligibleForSearch = true
+            activity.webpageURL = URL(string: "https://www.imdb.com/title/\(shown.id)/")
         }
     }
 
@@ -141,9 +165,17 @@ struct DetailView: View {
     }
 
     private var primaryTarget: PlaybackTarget? {
-        if item.kind == .movie { return PlaybackTarget(item: shown) }
+        if shown.kind == .movie { return PlaybackTarget(item: shown) }
         guard let detail = model.detail, let episode = library.nextEpisode(in: detail) else { return nil }
         return PlaybackTarget(item: shown, episode: episode)
+    }
+
+    /// For a series you're up to date with: the first episode, to watch it again.
+    private var rewatchTarget: PlaybackTarget? {
+        guard shown.kind == .series, let detail = model.detail, library.caughtUp(in: detail).caughtUp,
+              let first = detail.episodes.filter({ $0.season > 0 && $0.hasAired }).min(by: { ($0.season, $0.number) < ($1.season, $1.number) })
+        else { return nil }
+        return PlaybackTarget(item: shown, episode: first)
     }
 
     private var actionButtons: some View {
@@ -174,10 +206,17 @@ struct DetailView: View {
                     }
                     .buttonStyle(.glass)
                 }
-            } else if item.kind == .series {
+            } else if let rewatch = rewatchTarget {
+                Button {
+                    playback.play(rewatch, settings: settings, library: library, fromStart: true)
+                } label: {
+                    Label("Watch Again", systemImage: "arrow.counterclockwise").font(.headline).padding(.horizontal, 10).lineLimit(1)
+                }
+                .buttonStyle(.glassProminent)
+            } else if shown.kind == .series && model.detail == nil && model.error == nil {
                 ProgressView()
             }
-            if let target = primaryTarget, item.kind == .movie {
+            if let target = primaryTarget, shown.kind == .movie {
                 downloadButton(target)
             }
             if let trailer = model.detail?.trailerYouTubeID, let url = URL(string: "https://www.youtube.com/watch?v=\(trailer)") {
@@ -215,7 +254,7 @@ struct DetailView: View {
     /// Share, IMDb and watched state: what the toolbar's "…" holds.
     private var moreMenu: some View {
         Menu {
-            if item.kind == .movie {
+            if shown.kind == .movie {
                 let target = PlaybackTarget(item: shown)
                 if library.isWatched(target) {
                     Button { library.markUnwatched(target) } label: { Label("Mark as Unwatched", systemImage: "circle") }
@@ -226,7 +265,7 @@ struct DetailView: View {
             } else if let detail = model.detail {
                 let aired = detail.episodes.filter { $0.season > 0 && $0.hasAired }
                 Button { library.markWatched(aired, of: shown) } label: { Label("Mark All Aired as Watched", systemImage: "checkmark.circle") }
-                Button { library.markUnwatched(detail.episodes) } label: { Label("Mark All as Unwatched", systemImage: "circle") }
+                Button { library.markUnwatched(detail.episodes, of: shown) } label: { Label("Mark All as Unwatched", systemImage: "circle") }
             }
             Divider()
             if let imdb = URL(string: "https://www.imdb.com/title/\(shown.id)/") {
@@ -255,7 +294,7 @@ struct DetailView: View {
     private var statePills: [StatusPill] {
         var pills: [StatusPill] = []
         if library.isInWatchlist(shown) { pills.append(StatusPill(text: "In My List", systemImage: "bookmark.fill")) }
-        if item.kind == .movie {
+        if shown.kind == .movie {
             let target = PlaybackTarget(item: shown)
             if library.isWatched(target) {
                 pills.append(StatusPill(text: "Watched", systemImage: "checkmark.circle.fill", tint: Theme.cached))
@@ -274,6 +313,8 @@ struct DetailView: View {
             }
             let saved = detail.episodes.filter { downloads.item(for: PlaybackTarget(item: shown, episode: $0))?.isFinished == true }.count
             if saved > 0 { pills.append(StatusPill(text: "\(saved) downloaded", systemImage: "arrow.down.circle.fill", tint: Theme.accent)) }
+            let caughtUp = library.caughtUp(in: detail).caughtUp
+            if caughtUp { pills.append(StatusPill(text: "Caught up", systemImage: "checkmark.seal.fill", tint: Theme.cached)) }
             if let next = detail.episodes.filter({ !$0.hasAired && $0.season > 0 }).min(by: { ($0.released ?? .distantFuture) < ($1.released ?? .distantFuture) }),
                let date = next.released {
                 pills.append(StatusPill(text: "\(next.code) \(date.formatted(.relative(presentation: .named)))", systemImage: "calendar", tint: Theme.accent))
@@ -312,7 +353,7 @@ struct DetailView: View {
                     Divider()
                     let episodes = detail.episodes(in: model.season)
                     if episodes.filter(\.hasAired).allSatisfy({ library.isWatched($0) }) {
-                        Button { library.markUnwatched(episodes) } label: { Label("Mark Season as Unwatched", systemImage: "circle") }
+                        Button { library.markUnwatched(episodes, of: shown) } label: { Label("Mark Season as Unwatched", systemImage: "circle") }
                     } else {
                         Button { library.markWatched(episodes, of: shown) } label: { Label("Mark Season as Watched", systemImage: "checkmark.circle") }
                     }

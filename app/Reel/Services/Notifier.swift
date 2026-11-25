@@ -1,0 +1,83 @@
+import Foundation
+import UserNotifications
+import BackgroundTasks
+import UIKit
+
+/// Local notifications: a download that finished while the app was away, and new episodes of the
+/// series you follow. Episodes are scheduled ahead for when they air, so they arrive on time even
+/// if the system never wakes the app; a background refresh a few times a day keeps the schedule
+/// current.
+@MainActor
+enum Notifier {
+    static let refreshTask = "community.reel.app.refresh"
+    private static let scheduledPrefix = "episode:"
+
+    /// Asks once; afterwards iOS remembers the answer.
+    static func requestPermission() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return true
+        case .denied: return false
+        default: return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        }
+    }
+
+    static func downloadFinished(_ item: DownloadItem) {
+        guard UIApplication.shared.applicationState != .active else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Downloaded"
+        content.body = "\(item.target.displayTitle) is ready to watch offline."
+        content.sound = .default
+        content.userInfo = ["title": item.target.item.id, "kind": item.target.item.kind.rawValue]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "download:\(item.id)", content: content, trigger: nil))
+    }
+
+    /// Replaces the scheduled episode notifications with one for each episode of a followed series
+    /// that airs in the next two weeks.
+    static func scheduleEpisodes(_ episodes: [CalendarEpisode]) async {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(scheduledPrefix) }
+        center.removePendingNotificationRequests(withIdentifiers: pending)
+        let now = Date()
+        let soon = episodes.filter { $0.date > now && $0.date < now.addingTimeInterval(14 * 86_400) }.prefix(50)
+        for episode in soon {
+            let content = UNMutableNotificationContent()
+            content.title = episode.item.name
+            content.body = "\(episode.episode.code) · \(episode.episode.title) is out."
+            content.sound = .default
+            content.userInfo = ["title": episode.item.id, "kind": MediaKind.series.rawValue]
+            let trigger = UNCalendarNotificationTrigger(dateMatching: fireDate(for: episode.date), repeats: false)
+            try? await center.add(UNNotificationRequest(identifier: scheduledPrefix + episode.id, content: content, trigger: trigger))
+        }
+    }
+
+    static func cancelEpisodes() async {
+        let center = UNUserNotificationCenter.current()
+        let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(scheduledPrefix) }
+        center.removePendingNotificationRequests(withIdentifiers: pending)
+    }
+
+    /// Cinemeta gives many air dates as midnight UTC, which isn't when anything is out; those are
+    /// announced at 9 in the morning, local time, on that day.
+    static func fireDate(for date: Date) -> DateComponents {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let parts = utc.dateComponents([.hour, .minute], from: date)
+        if parts.hour == 0 && parts.minute == 0 {
+            var day = utc.dateComponents([.year, .month, .day], from: date)
+            day.hour = 9
+            day.calendar = Calendar.current
+            day.timeZone = .current
+            return day
+        }
+        return Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+    }
+
+    /// Asks iOS to wake the app in a few hours to refresh the calendar.
+    static func scheduleRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: refreshTask)
+        request.earliestBeginDate = Date().addingTimeInterval(4 * 3600)
+        try? BGTaskScheduler.shared.submit(request)
+    }
+}

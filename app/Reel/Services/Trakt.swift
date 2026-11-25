@@ -159,6 +159,92 @@ enum Trakt {
         return (movieIDs, episodeIDs)
     }
 
+    // MARK: History and ratings
+
+    /// Adds (with `watchedAt`) or removes films and episodes from Trakt's watched history.
+    static func history(_ targets: [PlaybackTarget], watched: Bool, at date: Date,
+                        credentials: Credentials, token: Token) async throws {
+        let stamp = ISO8601DateFormatter.trakt.string(from: date)
+        var movies: [[String: Any]] = []
+        var shows: [String: [Int: [[String: Any]]]] = [:]
+        for target in targets {
+            if let episode = target.episode {
+                var entry: [String: Any] = ["number": episode.number]
+                if watched { entry["watched_at"] = stamp }
+                shows[target.item.id, default: [:]][episode.season, default: []].append(entry)
+            } else {
+                var entry: [String: Any] = ["ids": ["imdb": target.item.id]]
+                if watched { entry["watched_at"] = stamp }
+                movies.append(entry)
+            }
+        }
+        let showBodies: [[String: Any]] = shows.map { imdb, seasons in
+            ["ids": ["imdb": imdb], "seasons": seasons.map { ["number": $0.key, "episodes": $0.value] }]
+        }
+        var body: [String: Any] = [:]
+        if !movies.isEmpty { body["movies"] = movies }
+        if !showBodies.isEmpty { body["shows"] = showBodies }
+        guard !body.isEmpty else { return }
+        _ = try await post(watched ? "/sync/history" : "/sync/history/remove", body: body, credentials: credentials, token: token)
+    }
+
+    /// Rates a film or series from 1 to 10; 0 removes the rating.
+    static func rate(_ item: MediaItem, rating: Int, credentials: Credentials, token: Token) async throws {
+        let key = item.kind == .movie ? "movies" : "shows"
+        var entry: [String: Any] = ["ids": ["imdb": item.id]]
+        if rating > 0 { entry["rating"] = rating }
+        _ = try await post(rating > 0 ? "/sync/ratings" : "/sync/ratings/remove", body: [key: [entry]], credentials: credentials, token: token)
+    }
+
+    /// When each part of the account last changed, so a sync can skip what hasn't.
+    static func lastActivities(credentials: Credentials, token: Token) async throws -> [String: String] {
+        let request = try request("/sync/last_activities", method: "GET", credentials: credentials, token: token)
+        let (data, response) = try await HTTP.session.data(for: request)
+        try check(response)
+        let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        func stamp(_ group: String, _ field: String) -> String { ((json[group] as? [String: Any])?[field] as? String) ?? "" }
+        return [
+            "watched": stamp("movies", "watched_at") + stamp("episodes", "watched_at"),
+            "watchlist": stamp("movies", "watchlisted_at") + stamp("shows", "watchlisted_at"),
+            "playback": stamp("movies", "paused_at") + stamp("episodes", "paused_at"),
+        ]
+    }
+
+    // MARK: Discovery
+
+    enum Discovery: String, CaseIterable {
+        case trending, popular, anticipated, recommended
+
+        var title: String {
+            switch self {
+            case .trending: return "Trending"
+            case .popular: return "Popular on Trakt"
+            case .anticipated: return "Most Anticipated"
+            case .recommended: return "Recommended for You"
+            }
+        }
+
+        var needsSignIn: Bool { self == .recommended }
+    }
+
+    /// A Trakt list of films or shows. Trending and anticipated wrap each title in an object;
+    /// popular and recommended list them bare. Both are read.
+    static func discover(_ list: Discovery, kind: MediaKind, credentials: Credentials, token: Token?) async throws -> [MediaItem] {
+        let type = kind == .movie ? "movies" : "shows"
+        let path = list == .recommended ? "/recommendations/\(type)?limit=30&ignore_collected=true" : "/\(type)/\(list.rawValue)?limit=30"
+        let request = try request(path, method: "GET", credentials: credentials, token: list.needsSignIn ? token : nil)
+        let (data, response) = try await HTTP.session.data(for: request)
+        try check(response)
+        let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        let key = kind == .movie ? "movie" : "show"
+        return entries.compactMap { entry -> MediaItem? in
+            let work = (entry[key] as? [String: Any]) ?? entry
+            guard let ids = work["ids"] as? [String: Any], let imdb = ids["imdb"] as? String, imdb.hasPrefix("tt") else { return nil }
+            let decoded = Work(title: work["title"] as? String, year: work["year"] as? Int, ids: IDs(imdb: imdb), runtime: nil)
+            return item(id: imdb, kind: kind, work: decoded)
+        }
+    }
+
     // MARK: Wire format
 
     struct IDs: Decodable { let imdb: String? }
@@ -234,7 +320,7 @@ enum Trakt {
 
     // MARK: Requests
 
-    private static func request(_ path: String, method: String, credentials: Credentials, token: Token?) throws -> URLRequest {
+    static func request(_ path: String, method: String, credentials: Credentials, token: Token?) throws -> URLRequest {
         var request = URLRequest(url: try HTTP.url(base + path), timeoutInterval: 30)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -260,7 +346,7 @@ enum Trakt {
         return data
     }
 
-    private static func check(_ response: URLResponse) throws {
+    static func check(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(http.statusCode) else { throw TraktError.status(http.statusCode) }
     }

@@ -19,6 +19,19 @@ enum DebridService: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// The account page, to renew a plan.
+    var accountPage: URL? {
+        switch self {
+        case .none: return nil
+        case .realdebrid: return URL(string: "https://real-debrid.com/premium")
+        case .alldebrid: return URL(string: "https://alldebrid.com/offer/")
+        case .premiumize: return URL(string: "https://www.premiumize.me/premium")
+        case .torbox: return URL(string: "https://torbox.app/pricing")
+        case .debridlink: return URL(string: "https://debrid-link.com/premium")
+        default: return keyPage
+        }
+    }
+
     /// Where the user finds their API key.
     var keyPage: URL? {
         switch self {
@@ -57,15 +70,46 @@ struct TorrentioConfig: Equatable {
     var sort: TorrentioSort = .quality
     var maxSizeGB: Int = 0
     var cachedOnly = true
+    /// Torrentio's address; a self-hosted instance can stand in for the public one.
+    var server: String = Torrentio.base
+    /// Torrentio's `language=` priority, e.g. ["french"]: those releases are listed first.
+    var priorityLanguages: [String] = []
+    /// Torrentio's `limit=`: results per quality; 0 for all.
+    var perQualityLimit: Int = 0
+    /// Releases with fewer seeders are hidden (applied here; uncached torrents only).
+    var minSeeders: Int = 0
 
     static let allProviders = [
         "yts", "eztv", "rarbg", "1337x", "thepiratebay", "kickasstorrents", "torrentgalaxy", "magnetdl",
         "horriblesubs", "nyaasi", "tokyotosho", "anidex", "rutor", "rutracker", "comando", "bludv",
         "torrent9", "ilcorsaronero", "mejortorrent", "wolfmax4k", "cinecalidad",
     ]
+    /// The language names Torrentio's `language=` option takes.
+    static let languageOptions = [
+        "english", "japanese", "russian", "italian", "portuguese", "spanish", "latino", "korean", "chinese", "taiwanese",
+        "french", "german", "dutch", "hindi", "telugu", "tamil", "polish", "lithuanian", "latvian", "estonian", "czech",
+        "slovakian", "slovenian", "hungarian", "romanian", "bulgarian", "serbian", "croatian", "ukrainian", "greek",
+        "danish", "finnish", "swedish", "norwegian", "turkish", "arabic", "persian", "hebrew", "vietnamese", "indonesian",
+        "malay", "thai",
+    ]
     static let qualityOptions = ["4k", "1080p", "720p", "480p", "scr", "cam", "unknown", "dolbyvision", "hdrall", "threed"]
 
     var hasDebrid: Bool { service != .none && !key.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// Identifies the debrid account in memory caches, so links resolved through one account are
+    /// never reused after switching to another. Not stable across launches, and never stored.
+    var accountFingerprint: String {
+        hasDebrid ? "\(service.rawValue):\(key.trimmingCharacters(in: .whitespacesAndNewlines).hashValue)" : "none"
+    }
+
+    /// The server address without a trailing slash, or the public instance when it isn't usable.
+    var serverBase: String {
+        var text = server.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasSuffix("/") { text.removeLast() }
+        if text.hasSuffix("/manifest.json") { text.removeLast("/manifest.json".count) }
+        guard let url = URL(string: text), url.scheme?.hasPrefix("http") == true, url.host != nil else { return Torrentio.base }
+        return text
+    }
 
     var pathSegment: String {
         var pairs: [String] = []
@@ -73,6 +117,8 @@ struct TorrentioConfig: Equatable {
         if sort != .quality { pairs.append("sort=\(sort.rawValue)") }
         if !excludedQualities.isEmpty { pairs.append("qualityfilter=\(excludedQualities.joined(separator: ","))") }
         if maxSizeGB > 0 { pairs.append("sizefilter=\(maxSizeGB)GB") }
+        if !priorityLanguages.isEmpty { pairs.append("language=\(priorityLanguages.joined(separator: ","))") }
+        if perQualityLimit > 0 { pairs.append("limit=\(perQualityLimit)") }
         if hasDebrid {
             if cachedOnly { pairs.append("debridoptions=nodownloadlinks") }
             let cleanKey = key.trimmingCharacters(in: .whitespacesAndNewlines).filter { $0 != "|" && $0 != "=" }
@@ -89,7 +135,7 @@ enum Torrentio {
         let segment = config.pathSegment
         let configPart = segment.isEmpty ? "" : "/" + (segment.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? segment)
         let id = videoID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/:"))) ?? videoID
-        let url = try HTTP.url("\(base)\(configPart)/stream/\(kind.rawValue)/\(id).json")
+        let url = try HTTP.url("\(config.serverBase)\(configPart)/stream/\(kind.rawValue)/\(id).json")
         return try await StremioStreams.fetch(url, addon: "Torrentio")
     }
 
@@ -102,7 +148,7 @@ enum Torrentio {
         guard let url = source.url else { throw ResolveError.notCached }
         guard source.needsResolve else { return url }
         var request = URLRequest(url: url, timeoutInterval: 90)
-        request.setValue("\(AppConfig.name)/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
         let (bytes, response) = try await HTTP.session.bytes(for: request, delegate: RedirectStopper.shared)
         bytes.task.cancel()
         guard let http = response as? HTTPURLResponse else { throw ResolveError.unexpected("no response") }
@@ -119,8 +165,11 @@ enum ResolveError: LocalizedError, Equatable {
     case accessDenied, downloading, infringement, tooBig, archive, notCached, limit, unexpected(String)
 
     init?(errorVideo url: URL) {
-        guard url.host?.contains("torrentio") == true, url.path.contains("/videos/") else { return nil }
+        // Torrentio's explanatory clips live under /videos/ on its own host (or a self-hosted one).
+        guard url.path.contains("/videos/") else { return nil }
         let name = url.deletingPathExtension().lastPathComponent
+        let known = ["failed_", "downloading"].contains { name.hasPrefix($0) } || name.contains("limit")
+        guard url.host?.contains("torrentio") == true || known else { return nil }
         switch true {
         case name.hasPrefix("failed_access"): self = .accessDenied
         case name.hasPrefix("downloading"): self = .downloading

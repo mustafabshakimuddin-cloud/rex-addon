@@ -43,15 +43,12 @@ final class SourceMemory: ObservableObject {
     @Published private(set) var records: [String: SourceRecord] = [:]
     @Published private(set) var verified: [String: SourceVerification] = [:]
 
-    private let fileURL: URL
-    private var saveTask: Task<Void, Never>?
+    private let writer: SnapshotWriter
     private static let maximumRecords = 3000
 
-    init() {
-        let folder = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
-            ?? FileManager.default.temporaryDirectory
-        fileURL = folder.appendingPathComponent("sources.json")
-        if let data = try? Data(contentsOf: fileURL), let saved = try? JSONDecoder().decode(Saved.self, from: data) {
+    init(fileURL: URL = JSONFile.url("sources.json")) {
+        writer = SnapshotWriter(url: fileURL)
+        if let saved = JSONFile.read(Saved.self, from: fileURL) {
             records = saved.records
             verified = saved.verified
         }
@@ -138,20 +135,42 @@ final class SourceMemory: ObservableObject {
 
     // MARK: Persistence
 
-    private struct Saved: Codable {
+    struct Saved: Codable {
         var records: [String: SourceRecord]
         var verified: [String: SourceVerification]
+
+        init(records: [String: SourceRecord], verified: [String: SourceVerification]) {
+            self.records = records
+            self.verified = verified
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            records = c.lossyDictionary(SourceRecord.self, forKey: .records)
+            verified = c.lossyDictionary(SourceVerification.self, forKey: .verified)
+            guard c.contains(.records) || c.contains(.verified) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: [], debugDescription: "Not a source memory file"))
+            }
+        }
+    }
+
+    var snapshot: Saved { Saved(records: records, verified: verified) }
+
+    /// Replaces everything learned with a backup's.
+    func restore(_ saved: Saved) {
+        records = saved.records
+        verified = saved.verified
+        scheduleSave()
     }
 
     private func scheduleSave() {
-        saveTask?.cancel()
-        let snapshot = Saved(records: records, verified: verified)
-        let url = fileURL
-        saveTask = Task.detached(priority: .utility) {
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
-            guard !Task.isCancelled, let data = try? JSONEncoder().encode(snapshot) else { return }
-            try? data.write(to: url, options: .atomic)
-        }
+        let snapshot = snapshot
+        writer.schedule(after: 1) { try? JSONEncoder().encode(snapshot) }
+    }
+
+    func saveNow() {
+        let snapshot = snapshot
+        writer.flush { try? JSONEncoder().encode(snapshot) }
     }
 }
 
@@ -159,23 +178,37 @@ final class SourceMemory: ObservableObject {
 /// order, and within a quality, history decides before the addon's own order does. A file that
 /// failed and never worked since goes to the very end.
 enum SourceRanker {
+    /// What the ranking reads for one source, worked out once before sorting: the history
+    /// lookups and the release-group regex are too slow to run inside the comparator.
+    private struct Key {
+        let source: StreamSource
+        let offset: Int
+        let failed: Bool
+        let cached: Bool
+        let sameGroup: Bool
+        let quality: Int
+        let preference: Double
+        let score: Double
+    }
+
     @MainActor
-    static func rank(_ sources: [StreamSource], memory: SourceMemory, preferGroup bingeGroup: String? = nil) -> [StreamSource] {
-        let playable = sources.enumerated().filter { $0.element.isPlayable }
-        let sorted = playable.sorted { lhs, rhs in
-            let a = lhs.element, b = rhs.element
-            let failedA = memory.failedBefore(a), failedB = memory.failedBefore(b)
-            if failedA != failedB { return !failedA }
-            if a.isCached != b.isCached { return a.isCached }
-            if let bingeGroup {
-                let sameA = a.bingeGroup == bingeGroup, sameB = b.bingeGroup == bingeGroup
-                if sameA != sameB { return sameA }
-            }
-            if a.qualityRank != b.qualityRank { return a.qualityRank < b.qualityRank }
-            let scoreA = memory.score(a), scoreB = memory.score(b)
-            if scoreA != scoreB { return scoreA > scoreB }
-            return lhs.offset < rhs.offset
+    static func rank(_ sources: [StreamSource], memory: SourceMemory, preferGroup bingeGroup: String? = nil,
+                     preferences: SourcePreferences = .none) -> [StreamSource] {
+        let keys = sources.enumerated().compactMap { offset, source -> Key? in
+            guard source.isPlayable else { return nil }
+            return Key(source: source, offset: offset, failed: memory.failedBefore(source), cached: source.isCached,
+                       sameGroup: bingeGroup != nil && source.bingeGroup == bingeGroup, quality: source.qualityRank,
+                       preference: preferences.score(source), score: memory.score(source))
         }
-        return sorted.map(\.element)
+        let sorted = keys.sorted { a, b in
+            if a.failed != b.failed { return !a.failed }
+            if a.cached != b.cached { return a.cached }
+            if a.sameGroup != b.sameGroup { return a.sameGroup }
+            if a.quality != b.quality { return a.quality < b.quality }
+            if a.preference != b.preference { return a.preference > b.preference }
+            if a.score != b.score { return a.score > b.score }
+            return a.offset < b.offset
+        }
+        return sorted.map(\.source)
     }
 }

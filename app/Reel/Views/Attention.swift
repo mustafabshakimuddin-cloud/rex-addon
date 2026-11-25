@@ -29,6 +29,11 @@ struct Attention {
                               detail: "Choose a debrid service or an addon so titles can play.",
                               systemImage: "wand.and.stars", tint: Theme.attention, needsYou: true, action: .setup))
         }
+        if settings.isDebridConfigured, let account = settings.debridAccount, let days = account.daysLeft, days <= 7 {
+            items.append(Item(id: "debrid.plan", title: days <= 0 ? "Debrid plan ends today" : "Debrid plan ends in \(days) day\(days == 1 ? "" : "s")",
+                              detail: "Renew \(settings.debridService.name), or streams stop when the plan ends.",
+                              systemImage: "key.fill", tint: Theme.warning, needsYou: true, action: .settings(.status)))
+        }
         if let error = trakt.syncError {
             items.append(Item(id: "trakt", title: "Trakt sync stopped", detail: error,
                               systemImage: "arrow.triangle.2.circlepath", tint: Theme.warning, needsYou: true,

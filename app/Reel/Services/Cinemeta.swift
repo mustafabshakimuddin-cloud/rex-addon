@@ -28,9 +28,14 @@ enum Cinemeta {
 
     static let pageSize = 50
     static let genres = [
-        "Action", "Adventure", "Animation", "Comedy", "Crime", "Documentary", "Drama", "Family",
-        "Fantasy", "History", "Horror", "Mystery", "Romance", "Sci-Fi", "Thriller", "War", "Western",
+        "Action", "Adventure", "Animation", "Biography", "Comedy", "Crime", "Documentary", "Drama", "Family",
+        "Fantasy", "History", "Horror", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western",
     ]
+
+    /// The genres Cinemeta lists for films or for series; series add the television ones.
+    static func genres(for kind: MediaKind) -> [String] {
+        kind == .movie ? genres : (genres + ["Reality-TV", "Talk-Show", "Game-Show"]).sorted()
+    }
 
     private static let catalogBase = "https://cinemeta-catalogs.strem.io"
     private static let apiBase = "https://v3-cinemeta.strem.io"
@@ -44,7 +49,15 @@ enum Cinemeta {
         let extra = extras.isEmpty ? "" : "/" + extras.joined(separator: "&")
         let url = try HTTP.url("\(catalogBase)/\(catalog.rawValue)/catalog/\(kind.rawValue)/\(catalog.rawValue)\(extra).json")
         let response = try await HTTP.get(url, as: CatalogResponse.self)
-        return response.metas.compactMap { $0.item(fallbackKind: kind) }
+        let items = response.metas.compactMap { $0.item(fallbackKind: kind) }
+        // Early in January this year's list is nearly empty: follow it with last year's.
+        if catalog == .newest, page == 0, items.count < 20, let year = genre.flatMap(Int.init),
+           year == Calendar.current.component(.year, from: Date()),
+           let previous = try? await self.catalog(kind, .newest, genre: String(year - 1)) {
+            let known = Set(items.map(\.id))
+            return items + previous.filter { !known.contains($0.id) }
+        }
+        return items
     }
 
     static func search(_ query: String, kind: MediaKind) async throws -> [MediaItem] {
@@ -87,14 +100,28 @@ enum Cinemeta {
         let chunks = stride(from: 0, to: ids.count, by: 40).map { Array(ids[$0..<min($0 + 40, ids.count)]) }
         var details: [MediaDetail] = []
         var firstError: Error?
-        for chunk in chunks {
-            do {
-                let joined = chunk.joined(separator: ",")
-                let url = try HTTP.url("\(apiBase)/catalog/series/calendar-videos/calendarVideosIds=\(joined).json")
-                let response = try await HTTP.get(url, as: DetailedResponse.self)
-                details += response.metasDetailed.compactMap { $0.detail(fallbackKind: .series) }
-            } catch {
-                firstError = firstError ?? error
+        // Three requests at a time: quicker for a long list, still gentle on Cinemeta.
+        for batch in stride(from: 0, to: chunks.count, by: 3).map({ Array(chunks[$0..<min($0 + 3, chunks.count)]) }) {
+            let results = await withTaskGroup(of: Result<[MediaDetail], Error>.self) { group in
+                for chunk in batch {
+                    group.addTask {
+                        await asyncResult {
+                            let joined = chunk.joined(separator: ",")
+                            let url = try HTTP.url("\(apiBase)/catalog/series/calendar-videos/calendarVideosIds=\(joined).json")
+                            let response = try await HTTP.get(url, as: DetailedResponse.self)
+                            return response.metasDetailed.compactMap { $0.detail(fallbackKind: .series) }
+                        }
+                    }
+                }
+                var collected: [Result<[MediaDetail], Error>] = []
+                for await result in group { collected.append(result) }
+                return collected
+            }
+            for result in results {
+                switch result {
+                case let .success(found): details += found
+                case let .failure(error): firstError = firstError ?? error
+                }
             }
         }
         if details.isEmpty, let firstError { throw firstError }
@@ -140,10 +167,6 @@ private struct MetaResponse: Decodable {
     let meta: RawMeta?
 }
 
-private struct Lossy<T: Decodable>: Decodable {
-    let value: T?
-    init(from decoder: Decoder) throws { value = try? T(from: decoder) }
-}
 
 private struct RawMeta: Decodable {
     var id: String?
@@ -285,7 +308,20 @@ enum DateParsing {
     }()
     private static let isoPlain = ISO8601DateFormatter()
 
+    private static let day: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
     static func parse(_ text: String) -> Date? {
         iso.date(from: text) ?? isoPlain.date(from: text)
+    }
+
+    /// A bare date, "2026-11-25".
+    static func parseDay(_ text: String) -> Date? {
+        day.date(from: String(text.prefix(10)))
     }
 }

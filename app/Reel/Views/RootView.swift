@@ -6,7 +6,7 @@ enum AppTab: Hashable {
 
 /// Pages inside Settings that other screens can open directly (a Status fix, an alert).
 enum SettingsPage: Hashable {
-    case status, pickRules, addons, trakt, appearance, homeScreen
+    case status, pickRules, addons, trakt, appearance, homeScreen, offline, backup
 }
 
 /// Pages that hang off Library, and that Home's "Waiting on You" cards open.
@@ -28,7 +28,57 @@ final class AppRouter: ObservableObject {
     @Published var homePath = NavigationPath()
     @Published var libraryPath = NavigationPath()
     @Published var settingsPath = NavigationPath()
+    @Published var explorePath = NavigationPath()
+    @Published var calendarPath = NavigationPath()
+    @Published var searchPath = NavigationPath()
     @Published var exploreKind: MediaKind = .movie
+    /// Raised when the current tab is chosen again: its screen scrolls back to the top.
+    @Published private(set) var scrollToTop: AppTab?
+    /// Run once the Settings sheet has finished closing.
+    private var afterSettings: (() -> Void)?
+
+    /// The tab bar's selection. Choosing the tab already showing goes back to its first screen,
+    /// and from there to the top, as in every iOS app.
+    var tabSelection: Binding<AppTab> {
+        Binding(get: { self.tab }, set: { chosen in
+            if chosen == self.tab { self.popToRoot(chosen) } else { self.tab = chosen }
+        })
+    }
+
+    func popToRoot(_ tab: AppTab) {
+        switch tab {
+        case .home: if homePath.isEmpty { scrollToTop = .home } else { homePath = NavigationPath() }
+        case .explore: if explorePath.isEmpty { scrollToTop = .explore } else { explorePath = NavigationPath() }
+        case .calendar: if calendarPath.isEmpty { scrollToTop = .calendar } else { calendarPath = NavigationPath() }
+        case .library: if libraryPath.isEmpty { scrollToTop = .library } else { libraryPath = NavigationPath() }
+        case .search: if searchPath.isEmpty { scrollToTop = .search } else { searchPath = NavigationPath() }
+        }
+    }
+
+    func didScrollToTop() { scrollToTop = nil }
+
+    /// Closes Settings, then runs `next` once it is off screen.
+    private func closeSettings(then next: @escaping () -> Void) {
+        guard showingSettings else { next(); return }
+        afterSettings = next
+        showingSettings = false
+    }
+
+    /// RootView: the Settings sheet has finished closing.
+    func settingsDismissed() {
+        let next = afterSettings
+        afterSettings = nil
+        next?()
+    }
+
+    /// Opens a title from a link or a shortcut, on the Home tab.
+    func open(_ item: MediaItem) {
+        closeSettings {
+            self.tab = .home
+            self.homePath = NavigationPath()
+            self.homePath.append(item)
+        }
+    }
 
     func openSettings(_ page: SettingsPage? = nil) {
         settingsPath = NavigationPath()
@@ -37,10 +87,7 @@ final class AppRouter: ObservableObject {
     }
 
     func openLibrary(_ page: LibraryPage) {
-        let wasShowingSettings = showingSettings
-        showingSettings = false
-        Task { @MainActor in
-            if wasShowingSettings { try? await Task.sleep(nanoseconds: 450_000_000) }
+        closeSettings {
             self.tab = .library
             self.libraryPath = NavigationPath()
             self.libraryPath.append(page)
@@ -48,12 +95,7 @@ final class AppRouter: ObservableObject {
     }
 
     func openSetup() {
-        guard showingSettings else { showingSetup = true; return }
-        showingSettings = false
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 500_000_000)  // let the settings sheet finish closing
-            self.showingSetup = true
-        }
+        closeSettings { self.showingSetup = true }
     }
 
     func perform(_ action: AppAlert.Action) {
@@ -104,22 +146,22 @@ struct RootView: View {
         let attention = Attention(settings: settings, library: library, trakt: trakt, upcoming: upcoming)
         // A system TabView, not a hand-drawn bar: iOS 27 gives it Liquid Glass, and on the
         // unfolded iPhone Duo (and iPad) the adaptable style turns it into a side rail/sidebar.
-        TabView(selection: $router.tab) {
+        TabView(selection: router.tabSelection) {
             Tab("Home", systemImage: "house.fill", value: AppTab.home) {
                 NavigationStack(path: $router.homePath) { HomeView().appDestinations() }
             }
             .badge(attention.badgeCount)
             Tab("Explore", systemImage: "safari", value: AppTab.explore) {
-                NavigationStack { ExploreView().appDestinations() }
+                NavigationStack(path: $router.explorePath) { ExploreView().appDestinations() }
             }
             Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                NavigationStack { CalendarView().appDestinations() }
+                NavigationStack(path: $router.calendarPath) { CalendarView().appDestinations() }
             }
             Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.library) {
                 NavigationStack(path: $router.libraryPath) { LibraryView().appDestinations() }
             }
             Tab(value: AppTab.search, role: .search) {
-                NavigationStack { SearchView().appDestinations() }
+                NavigationStack(path: $router.searchPath) { SearchView().appDestinations() }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -132,7 +174,7 @@ struct RootView: View {
         .overlay(alignment: .bottom) { preparingHUD }
         .overlay(alignment: .top) { AlertToast() }
         // Five tabs fit an iPhone tab bar without a "More" tab; Settings is a gear and a sheet.
-        .sheet(isPresented: $router.showingSettings) {
+        .sheet(isPresented: $router.showingSettings, onDismiss: { router.settingsDismissed() }) {
             NavigationStack(path: $router.settingsPath) {
                 SettingsView()
                     .toolbar {
@@ -153,7 +195,7 @@ struct RootView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $playback.session) { session in
+        .fullScreenCover(item: $playback.session, onDismiss: { playback.playerDismissed() }) { session in
             PlayerView(session: session)
         }
         .task {
@@ -167,6 +209,28 @@ struct RootView: View {
         }
         .task(id: UpcomingStore.followedSeries(library).map(\.id)) {
             await upcoming.refresh(library)
+            if settings.notifyNewEpisodes { await Notifier.scheduleEpisodes(upcoming.upcoming) }
+        }
+        .task(id: library.watchlist.map(\.id)) {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            Spotlight.index(library.watchlist)
+        }
+        .onChange(of: settings.notifyNewEpisodes) { _, on in
+            Task {
+                if on, await Notifier.requestPermission() {
+                    await upcoming.refresh(library)
+                    await Notifier.scheduleEpisodes(upcoming.upcoming)
+                    Notifier.scheduleRefresh()
+                } else {
+                    if on { settings.notifyNewEpisodes = false }
+                    await Notifier.cancelEpisodes()
+                }
+            }
+        }
+        .onChange(of: settings.notifyDownloads) { _, on in
+            guard on else { return }
+            Task { if !(await Notifier.requestPermission()) { settings.notifyDownloads = false } }
         }
         .onChange(of: trakt.syncError) { _, error in
             if let error { alerts.post("Trakt sync stopped", message: error, level: .warning, action: .openTrakt) }

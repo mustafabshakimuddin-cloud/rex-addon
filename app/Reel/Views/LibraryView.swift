@@ -96,6 +96,7 @@ struct LibraryView: View {
             .padding(.vertical, 12)
         }
         .background(Theme.Backdrop())
+        .scrollsToTopOnRetap(.library)
         .navigationTitle("Library")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -278,7 +279,8 @@ struct LibraryOverview: View {
     @EnvironmentObject private var upcoming: UpcomingStore
 
     private var watchedCount: Int { library.history.filter(\.isFinished).count }
-    private var hoursWatched: Double { library.history.reduce(0) { $0 + min($1.position, $1.duration) } / 3600 }
+    /// Time actually played: titles marked watched by hand have no real duration to count.
+    private var hoursWatched: Double { library.history.filter { $0.marked != true }.reduce(0) { $0 + min($1.position, $1.duration) } / 3600 }
     private var thisWeek: Int {
         let cutoff = Date().addingTimeInterval(-7 * 86_400)
         return library.history.filter { $0.updatedAt > cutoff }.count

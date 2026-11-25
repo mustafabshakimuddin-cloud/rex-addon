@@ -19,6 +19,14 @@ struct PlayerView: View {
     @State private var nextEpisode: Episode?
     @State private var reportedStart = false
     @State private var handledFailure = false
+    @State private var reconnecting = false
+    @State private var reconnects = 0
+    /// Which side a double tap skipped, for the brief arrow drawn there.
+    @State private var skipFlash: SkipFlash?
+    @State private var pinchScale: CGFloat = 1
+    @State private var preparedNext = false
+
+    struct SkipFlash: Equatable { let forward: Bool; let id = UUID() }
     /// The fold, when an iPhone Duo stands half-open like a laptop: the picture goes above it and
     /// the controls below, instead of both bending across the crease.
     @State private var fold: CGRect?
@@ -67,12 +75,59 @@ struct PlayerView: View {
             picture
             SubtitleOverlay(feed: model.subtitles, bottomInset: controlsVisible ? 150 : 36, appearance: subtitleAppearance)
 
-            // Owns the taps above the video: one shows or hides the controls, two toggle fill.
-            Color.clear
-                .contentShape(Rectangle())
-                .ignoresSafeArea()
-                .onTapGesture(count: 2) { model.fillsScreen.toggle() }
-                .onTapGesture { toggleControls() }
+            // Owns the touches above the video: one tap shows or hides the controls; two taps on
+            // the left or right third skip back or ahead 10 s, two in the middle toggle fill;
+            // pinching fills or fits; holding plays at double speed until released.
+            GeometryReader { proxy in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2, coordinateSpace: .local) { location in
+                        doubleTap(at: location.x, width: proxy.size.width)
+                    }
+                    .onTapGesture { toggleControls() }
+                    .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 30) {
+                    } onPressingChanged: { pressing in
+                        if pressing { model.beginBoost() } else { model.endBoost() }
+                    }
+                    .simultaneousGesture(
+                        MagnifyGesture()
+                            .onChanged { pinchScale = $0.magnification }
+                            .onEnded { value in
+                                if value.magnification > 1.15 { model.fillsScreen = true }
+                                if value.magnification < 0.87 { model.fillsScreen = false }
+                                pinchScale = 1
+                            }
+                    )
+            }
+            .ignoresSafeArea()
+
+            if let skipFlash {
+                SkipFlashView(forward: skipFlash.forward)
+                    .id(skipFlash.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: skipFlash.forward ? .trailing : .leading)
+                    .padding(.horizontal, 60)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+            if model.boosted {
+                Label("2× speed", systemImage: "forward.fill")
+                    .font(.subheadline.weight(.bold))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .glassEffect(.regular, in: .capsule)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 70)
+                    .allowsHitTesting(false)
+            }
+            if model.sleepFired && !model.isPlaying {
+                Label("Paused by the sleep timer", systemImage: "moon.zzz.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .glassEffect(.regular, in: .capsule)
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 70)
+                    .allowsHitTesting(false)
+            }
+            keyboardShortcuts
 
             if model.isBusy && model.hasFirstFrame {
                 ProgressView().controlSize(.large).tint(.white).allowsHitTesting(false)
@@ -173,6 +228,18 @@ struct PlayerView: View {
                 SkipChapterButton(time: model.time, chapters: model.chapters, duration: model.duration,
                                   skipsCredits: nextEpisode == nil) { model.seek(to: $0) }
             }
+            if (settings.autoSkipIntro || settings.autoSkipRecap) && !model.chapters.isEmpty {
+                AutoSkipper(time: model.time, chapters: model.chapters, duration: model.duration,
+                            intro: settings.autoSkipIntro, recap: settings.autoSkipRecap) { model.seek(to: $0) }
+            }
+            if let nextEpisode, let startsAt = upNextStart, !preparedNext {
+                // A minute and a half before Up Next, get its stream ready so it starts at once.
+                TimeTrigger(time: model.time, at: max(0, startsAt - 90)) {
+                    preparedNext = true
+                    playback.prefetch(PlaybackTarget(item: session.target.item, episode: nextEpisode), settings: settings,
+                                      immediately: true, prepare: settings.autoPlayNext)
+                }
+            }
             if let nextEpisode, let startsAt = upNextStart {
                 UpNextCard(time: model.time, next: nextEpisode, showName: session.target.item.name, startsAt: startsAt,
                            countdown: settings.autoPlayNext, isPlaying: model.isPlaying) { playNext() }
@@ -194,15 +261,30 @@ struct PlayerView: View {
 
     private func start() {
         let target = session.target
+        // The way this film or series was left last time wins over the general settings.
+        let choice = ViewingPreferences.choice(for: target.item.id)
+        let audio = choice?.audioLanguage.map { Languages.codes(for: $0) } ?? Languages.codes(for: settings.preferredAudioLanguage)
+        let subtitles: [String]
+        if let chosen = choice?.subtitleLanguage {
+            subtitles = chosen.isEmpty ? [] : Languages.codes(for: chosen)
+        } else {
+            subtitles = settings.autoplaySubtitles ? Languages.codes(for: settings.preferredSubtitleLanguage) : []
+        }
+        if let choice {
+            model.fillsScreen = choice.fillsScreen
+            if choice.subtitleDelay != 0 { model.setSubtitleDelay(choice.subtitleDelay) }
+        }
         model.start(
             url: session.url,
             title: target.item.name,
             subtitle: target.episode.map { "\($0.code) · \($0.title)" },
             startAt: session.startAt,
-            audioLanguages: Languages.codes(for: settings.preferredAudioLanguage),
-            subtitleLanguages: settings.autoplaySubtitles ? Languages.codes(for: settings.preferredSubtitleLanguage) : [],
+            audioLanguages: audio,
+            subtitleLanguages: subtitles,
+            artwork: target.episode?.thumbnail ?? target.item.poster,
+            localSubtitles: session.localSubtitles,
             onProgress: { [weak lib = library] position, duration in
-                lib?.record(target, position: position, duration: duration)
+                lib?.record(target, position: position, duration: duration, live: true)
             }
         )
         scheduleHide()
@@ -212,6 +294,7 @@ struct PlayerView: View {
         guard !reportedStart else { return }
         reportedStart = true
         playback.playerStarted(session)
+        if let rate = ViewingPreferences.choice(for: session.target.item.id)?.rate, rate != 1 { model.setRate(rate) }
         // With subtitles wanted and none in the file in that language, fetch one from OpenSubtitles.
         if settings.autoplaySubtitles && settings.searchOnlineSubtitles && !settings.preferredSubtitleLanguage.isEmpty {
             Task {
@@ -225,28 +308,111 @@ struct PlayerView: View {
     }
 
     private func failed(_ message: String) {
-        // Only a source that never showed a picture counts as failing to open. A stream that
-        // played and then failed (a reopen after the background, an expired link) gets the error
-        // card, not a silent switch to another source and a mark against this one.
-        guard !model.hasFirstFrame, !reportedStart, !handledFailure else { return }
+        // A stream that played and then failed (an expired debrid link, a long pause) is opened
+        // again from a fresh link at the same place, once, before the error card shows. It is
+        // not a mark against the source.
+        if model.hasFirstFrame || reportedStart {
+            if reconnects == 0 { reconnect() }
+            return
+        }
+        // A source that never showed a picture failed to open: move on to the next, unless the
+        // device is simply offline.
+        guard !handledFailure else { return }
         handledFailure = true
-        if playback.playerFailed(session, reason: message, position: nil) {
+        if playback.playerFailed(session, reason: message, position: nil, offline: NetworkMonitor.shared.isOffline,
+                                 settings: settings) {
             model.stop()
+        }
+    }
+
+    /// Resolves the same release again and reloads it where it stopped.
+    private func reconnect() {
+        guard !reconnecting else { return }
+        reconnecting = true
+        reconnects += 1
+        let position = model.currentTime
+        Task {
+            defer { reconnecting = false }
+            do {
+                let url = try await playback.reconnect(session, settings: settings)
+                model.reload(url: url, at: position)
+            } catch {
+                // The error card stays, with Retry.
+            }
         }
     }
 
     private func finish() {
         hideTask?.cancel()
+        rememberChoices()
         scrobble(.stop)
         model.stop()
-        library.saveNow()
+        library.commitLive()
     }
 
     private func ended() {
-        if nextEpisode != nil && settings.autoPlayNext {
+        if nextEpisode != nil && settings.autoPlayNext && !model.stopsAtEnd {
             playNext()
         } else {
             dismiss()
+        }
+    }
+
+    /// What the viewer picked here, for the next episode or the next time.
+    private func rememberChoices() {
+        guard model.hasFirstFrame else { return }
+        let audio = model.audioTracks.first { $0.id == model.activeAudio }?.language
+        let subtitle: String? = model.activeSubtitle == nil
+            ? (model.subtitleTracks.isEmpty ? nil : "")
+            : model.subtitleTracks.first { $0.id == model.activeSubtitle }?.language
+        let choice = ViewingChoice(audioLanguage: audio.flatMap { $0.isEmpty || $0 == "und" ? nil : $0 },
+                                   subtitleLanguage: subtitle.flatMap { $0 == "und" ? nil : $0 },
+                                   subtitleDelay: model.subtitleDelay, fillsScreen: model.fillsScreen,
+                                   rate: model.boosted ? 1 : model.rate)
+        ViewingPreferences.store(choice, for: session.target.item.id)
+    }
+
+    private func doubleTap(at x: CGFloat, width: CGFloat) {
+        guard width > 0 else { return }
+        let third = x / width
+        if third < 0.33 || third > 0.67 {
+            let forward = third > 0.67
+            model.skip(forward ? 10 : -10)
+            withAnimation(.easeOut(duration: 0.2)) { skipFlash = SkipFlash(forward: forward) }
+            let flash = skipFlash
+            Task {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                if skipFlash == flash { withAnimation(.easeIn(duration: 0.25)) { skipFlash = nil } }
+            }
+        } else {
+            model.fillsScreen.toggle()
+        }
+    }
+
+    /// A hardware keyboard: space plays and pauses, arrows skip, F fills, C turns subtitles on
+    /// and off, Esc closes. Hidden buttons, so they work without focus and show in the ⌘ overlay.
+    private var keyboardShortcuts: some View {
+        ZStack {
+            Button("Play or Pause") { model.togglePlay(); scheduleHide() }.keyboardShortcut(.space, modifiers: [])
+            Button("Back 10 Seconds") { model.skip(-10) }.keyboardShortcut(.leftArrow, modifiers: [])
+            Button("Ahead 10 Seconds") { model.skip(10) }.keyboardShortcut(.rightArrow, modifiers: [])
+            Button("Back 1 Minute") { model.skip(-60) }.keyboardShortcut(.leftArrow, modifiers: [.shift])
+            Button("Ahead 1 Minute") { model.skip(60) }.keyboardShortcut(.rightArrow, modifiers: [.shift])
+            Button("Fill Screen") { model.fillsScreen.toggle() }.keyboardShortcut("f", modifiers: [])
+            Button("Subtitles") { toggleSubtitles() }.keyboardShortcut("c", modifiers: [])
+            Button("Close Player") { dismiss() }.keyboardShortcut(.escape, modifiers: [])
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    private func toggleSubtitles() {
+        if model.activeSubtitle != nil {
+            model.selectSubtitle(nil)
+        } else if let track = model.subtitleTracks.first(where: { Languages.matches($0.language ?? "", preferred: settings.preferredSubtitleLanguage) })
+                    ?? model.subtitleTracks.first {
+            model.selectSubtitle(track)
         }
     }
 
@@ -264,19 +430,21 @@ struct PlayerView: View {
     private func loadNextEpisode() async {
         guard let current = session.target.episode,
               let detail = try? await Cinemeta.detail(.series, id: session.target.item.id) else { return }
+        library.learnEpisodes(detail)
         let ordered = detail.episodes.filter { $0.season > 0 }.sorted { ($0.season, $0.number) < ($1.season, $1.number) }
         guard let index = ordered.firstIndex(where: { $0.id == current.id }), ordered.indices.contains(index + 1) else { return }
         let next = ordered[index + 1]
         guard next.hasAired else { return }
         nextEpisode = next
         // Look its sources up now, so the switch at the credits is quick.
-        playback.prefetch(PlaybackTarget(item: session.target.item, episode: next), settings: settings)
+        playback.prefetch(PlaybackTarget(item: session.target.item, episode: next), settings: settings,
+                          immediately: true, prepare: false)
     }
 
     private func playNext() {
         guard let nextEpisode else { return }
         scrobble(.stop)
-        library.record(session.target, position: model.duration, duration: model.duration)
+        library.record(session.target, position: model.duration, duration: model.duration, live: true)
         playback.playNext(PlaybackTarget(item: session.target.item, episode: nextEpisode), after: session,
                           settings: settings, library: library)
     }
@@ -392,6 +560,10 @@ struct PlayerView: View {
                 barButton("Sources", "list.bullet.rectangle") { playback.switchSource(for: session.target) }
                 barButton("Audio & Subtitles", "captions.bubble") { openPanel(.audio) }
                 barButton(Self.rateLabel(model.rate), "gauge.with.dots.needle.67percent") { openPanel(.speed) }
+                if model.sleepTimer != nil {
+                    Image(systemName: "moon.zzz.fill").font(.subheadline).foregroundStyle(Theme.accent)
+                        .accessibilityLabel(model.sleepTimer?.title ?? "Sleep timer on")
+                }
                 Spacer(minLength: 0)
                 Button {
                     model.fillsScreen.toggle()
@@ -424,8 +596,13 @@ struct PlayerView: View {
             Text("This source couldn't be played").font(.headline)
             Text(message).font(.footnote).foregroundStyle(.white.opacity(0.75)).multilineTextAlignment(.center)
             HStack(spacing: 12) {
+                if !session.isLocal {
+                    Button(reconnecting ? "Retrying…" : "Retry") { reconnect() }
+                        .buttonStyle(.glassProminent)
+                        .disabled(reconnecting)
+                }
                 Button("Try Another Source") { playback.switchSource(for: session.target) }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.glass)
                 Button("Close") { dismiss() }.buttonStyle(.glass)
             }
         }
@@ -641,4 +818,62 @@ struct AirPlayButton: UIViewRepresentable {
         return view
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
+/// Two chevrons on the side a double tap skipped.
+private struct SkipFlashView: View {
+    let forward: Bool
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: forward ? "goforward.10" : "gobackward.10").font(.system(size: 34, weight: .semibold))
+            Text(forward ? "+10 s" : "−10 s").font(.caption.weight(.bold))
+        }
+        .foregroundStyle(.white)
+        .padding(22)
+        .glassEffect(.regular, in: .circle)
+    }
+}
+
+/// Skips intros and recaps by itself, once per chapter, when Settings asks for it.
+struct AutoSkipper: View {
+    @ObservedObject var time: PlaybackTime
+    let chapters: [ChapterInfo]
+    let duration: Double
+    let intro: Bool
+    let recap: Bool
+    let skip: (Double) -> Void
+    @State private var skipped: Set<Double> = []
+
+    var body: some View {
+        let now = time.currentTime
+        let chapter = chapters.first { now >= $0.startSeconds + 0.5 && now < $0.startSeconds + $0.durationSeconds - 3 }
+        Color.clear.frame(width: 0, height: 0)
+            .onChange(of: chapter?.startSeconds) { _, start in
+                guard let chapter, let start, !skipped.contains(start) else { return }
+                let kind = ChapterKind(chapter.name)
+                guard (kind == .intro && intro) || (kind == .recap && recap) else { return }
+                skipped.insert(start)
+                skip(min(chapter.startSeconds + chapter.durationSeconds, max(duration - 1, 0)))
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+/// Runs an action once, when the playhead first passes a time.
+struct TimeTrigger: View {
+    @ObservedObject var time: PlaybackTime
+    let at: Double
+    let action: () -> Void
+    @State private var fired = false
+
+    var body: some View {
+        let reached = time.currentTime >= at
+        Color.clear.frame(width: 0, height: 0)
+            .onChange(of: reached) { _, now in
+                guard now, !fired else { return }
+                fired = true
+                action()
+            }
+            .accessibilityHidden(true)
+    }
 }

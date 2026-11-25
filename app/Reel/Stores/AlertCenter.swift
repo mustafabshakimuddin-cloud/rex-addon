@@ -40,18 +40,20 @@ final class AlertCenter: ObservableObject {
     @Published private(set) var current: AppAlert?
     @Published private(set) var recent: [AppAlert] = []
     /// Alerts not yet seen in the list; Settings shows a red dot while there are problems among them.
-    @Published private(set) var unseenProblems = 0
+    @Published private(set) var unseenProblems = 0 { didSet { defaults.set(unseenProblems, forKey: Self.unseenKey) } }
 
     private let defaults = UserDefaults.standard
     private var dismissTask: Task<Void, Never>?
     private var queue: [AppAlert] = []
     private static let key = "alerts.recent"
+    private static let unseenKey = "alerts.unseenProblems"
     private static let keep = 40
 
     init() {
         if let data = defaults.data(forKey: Self.key), let saved = try? JSONDecoder().decode([AppAlert].self, from: data) {
             recent = saved
         }
+        unseenProblems = defaults.integer(forKey: Self.unseenKey)
     }
 
     func post(_ title: String, message: String? = nil, level: AppAlert.Level = .info, action: AppAlert.Action? = nil,

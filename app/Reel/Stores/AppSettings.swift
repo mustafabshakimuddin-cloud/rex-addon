@@ -1,5 +1,7 @@
 import Foundation
 import Combine
+import AVFoundation
+import VideoToolbox
 
 @MainActor
 final class AppSettings: ObservableObject {
@@ -31,6 +33,49 @@ final class AppSettings: ObservableObject {
     @Published var showSkipButtons: Bool { didSet { defaults.set(showSkipButtons, forKey: Keys.skipButtons) } }
     /// Offer the next episode near the end of one, and start it after a countdown.
     @Published var autoPlayNext: Bool { didSet { defaults.set(autoPlayNext, forKey: Keys.autoPlayNext) } }
+    /// Skip intros and recaps without a tap, when the file's chapters name them.
+    @Published var autoSkipIntro: Bool { didSet { defaults.set(autoSkipIntro, forKey: Keys.autoSkipIntro) } }
+    @Published var autoSkipRecap: Bool { didSet { defaults.set(autoSkipRecap, forKey: Keys.autoSkipRecap) } }
+
+    // MARK: Torrentio
+    @Published var torrentioServer: String { didSet { defaults.set(torrentioServer, forKey: Keys.torrentioServer) } }
+    /// Torrentio's language names ("french"), listed first in its results.
+    @Published var priorityLanguages: [String] { didSet { defaults.set(priorityLanguages, forKey: Keys.priorityLanguages) } }
+    @Published var perQualityLimit: Int { didSet { defaults.set(perQualityLimit, forKey: Keys.perQualityLimit) } }
+    @Published var minSeeders: Int { didSet { defaults.set(minSeeders, forKey: Keys.minSeeders) } }
+
+    // MARK: Source preferences
+    @Published var preferHDR: Leaning { didSet { defaults.set(preferHDR.rawValue, forKey: Keys.preferHDR) } }
+    @Published var preferDolbyVision: Leaning { didSet { defaults.set(preferDolbyVision.rawValue, forKey: Keys.preferDV) } }
+    @Published var preferAtmos: Leaning { didSet { defaults.set(preferAtmos.rawValue, forKey: Keys.preferAtmos) } }
+    @Published var preferRemux: Leaning { didSet { defaults.set(preferRemux.rawValue, forKey: Keys.preferRemux) } }
+    @Published var preferredGroups: [String] { didSet { defaults.set(preferredGroups, forKey: Keys.preferredGroups) } }
+    /// Favour releases that carry the preferred audio language.
+    @Published var preferAudioLanguageReleases: Bool { didSet { defaults.set(preferAudioLanguageReleases, forKey: Keys.preferAudioReleases) } }
+    @Published var matchDevice: Bool { didSet { defaults.set(matchDevice, forKey: Keys.matchDevice) } }
+
+    // MARK: Debrid account
+    /// What the service said about the account at the last check: plan end, user name.
+    @Published var debridAccount: DebridAccountInfo? {
+        didSet { defaults.set(try? JSONEncoder().encode(debridAccount), forKey: Keys.debridAccount) }
+    }
+
+    // MARK: Offline copies
+    @Published var downloadsOverCellular: Bool { didSet { defaults.set(downloadsOverCellular, forKey: Keys.downloadsCellular) } }
+    /// The largest release a download picks, in GB; 0 follows the streaming limit.
+    @Published var downloadMaxSizeGB: Int { didSet { defaults.set(downloadMaxSizeGB, forKey: Keys.downloadMaxSize) } }
+    /// Delete finished downloads this many days after they were watched; 0 keeps them.
+    @Published var deleteWatchedDownloadsAfterDays: Int { didSet { defaults.set(deleteWatchedDownloadsAfterDays, forKey: Keys.deleteWatchedAfter) } }
+    /// Save the preferred-language subtitles from OpenSubtitles with each download.
+    @Published var downloadSubtitles: Bool { didSet { defaults.set(downloadSubtitles, forKey: Keys.downloadSubtitles) } }
+
+    // MARK: Notifications
+    @Published var notifyNewEpisodes: Bool { didSet { defaults.set(notifyNewEpisodes, forKey: Keys.notifyEpisodes) } }
+    @Published var notifyDownloads: Bool { didSet { defaults.set(notifyDownloads, forKey: Keys.notifyDownloads) } }
+
+    // MARK: Browsing
+    /// Leave watched films out of Explore and catalogue rows.
+    @Published var hideWatched: Bool { didSet { defaults.set(hideWatched, forKey: Keys.hideWatched) } }
 
     // MARK: Appearance
     @Published var accent: AccentChoice {
@@ -58,7 +103,7 @@ final class AppSettings: ObservableObject {
         sort = TorrentioSort(rawValue: defaults.string(forKey: Keys.sort) ?? "") ?? .quality
         maxSizeGB = defaults.object(forKey: Keys.maxSize) as? Int ?? 0
         cachedOnly = defaults.object(forKey: Keys.cachedOnly) as? Bool ?? true
-        preferredSubtitleLanguage = defaults.string(forKey: Keys.subtitleLanguage) ?? "eng"
+        preferredSubtitleLanguage = defaults.string(forKey: Keys.subtitleLanguage) ?? Languages.deviceDefault
         preferredAudioLanguage = defaults.string(forKey: Keys.audioLanguage) ?? ""
         autoplaySubtitles = defaults.object(forKey: Keys.autoplaySubtitles) as? Bool ?? false
         autoPlayBest = defaults.object(forKey: Keys.autoPlayBest) as? Bool ?? false
@@ -71,6 +116,27 @@ final class AppSettings: ObservableObject {
         searchOnlineSubtitles = defaults.object(forKey: Keys.onlineSubtitles) as? Bool ?? true
         showSkipButtons = defaults.object(forKey: Keys.skipButtons) as? Bool ?? true
         autoPlayNext = defaults.object(forKey: Keys.autoPlayNext) as? Bool ?? true
+        autoSkipIntro = defaults.object(forKey: Keys.autoSkipIntro) as? Bool ?? false
+        autoSkipRecap = defaults.object(forKey: Keys.autoSkipRecap) as? Bool ?? false
+        torrentioServer = defaults.string(forKey: Keys.torrentioServer) ?? Torrentio.base
+        priorityLanguages = defaults.stringArray(forKey: Keys.priorityLanguages) ?? []
+        perQualityLimit = defaults.object(forKey: Keys.perQualityLimit) as? Int ?? 0
+        minSeeders = defaults.object(forKey: Keys.minSeeders) as? Int ?? 0
+        preferHDR = Leaning(rawValue: defaults.string(forKey: Keys.preferHDR) ?? "") ?? .neutral
+        preferDolbyVision = Leaning(rawValue: defaults.string(forKey: Keys.preferDV) ?? "") ?? .neutral
+        preferAtmos = Leaning(rawValue: defaults.string(forKey: Keys.preferAtmos) ?? "") ?? .neutral
+        preferRemux = Leaning(rawValue: defaults.string(forKey: Keys.preferRemux) ?? "") ?? .neutral
+        preferredGroups = defaults.stringArray(forKey: Keys.preferredGroups) ?? []
+        preferAudioLanguageReleases = defaults.object(forKey: Keys.preferAudioReleases) as? Bool ?? true
+        matchDevice = defaults.object(forKey: Keys.matchDevice) as? Bool ?? true
+        debridAccount = defaults.data(forKey: Keys.debridAccount).flatMap { try? JSONDecoder().decode(DebridAccountInfo.self, from: $0) }
+        downloadsOverCellular = defaults.object(forKey: Keys.downloadsCellular) as? Bool ?? false
+        downloadMaxSizeGB = defaults.object(forKey: Keys.downloadMaxSize) as? Int ?? 0
+        deleteWatchedDownloadsAfterDays = defaults.object(forKey: Keys.deleteWatchedAfter) as? Int ?? 0
+        downloadSubtitles = defaults.object(forKey: Keys.downloadSubtitles) as? Bool ?? true
+        notifyNewEpisodes = defaults.object(forKey: Keys.notifyEpisodes) as? Bool ?? false
+        notifyDownloads = defaults.object(forKey: Keys.notifyDownloads) as? Bool ?? true
+        hideWatched = defaults.object(forKey: Keys.hideWatched) as? Bool ?? false
         let accent = AccentChoice(rawValue: defaults.string(forKey: Keys.accent) ?? "") ?? .rose
         self.accent = accent
         Theme.choice = accent
@@ -107,8 +173,32 @@ final class AppSettings: ObservableObject {
     var torrentio: TorrentioConfig {
         TorrentioConfig(
             service: debridService, key: debridKey, providers: providers,
-            excludedQualities: excludedQualities, sort: sort, maxSizeGB: maxSizeGB, cachedOnly: cachedOnly
+            excludedQualities: excludedQualities, sort: sort, maxSizeGB: maxSizeGB, cachedOnly: cachedOnly,
+            server: torrentioServer, priorityLanguages: priorityLanguages, perQualityLimit: perQualityLimit,
+            minSeeders: minSeeders
         )
+    }
+
+    /// What decides between releases of the same quality.
+    var sourcePreferences: SourcePreferences {
+        SourcePreferences(hdr: preferHDR, dolbyVision: preferDolbyVision, atmos: preferAtmos, remux: preferRemux,
+                          groups: preferredGroups, audioLanguage: preferAudioLanguageReleases ? preferredAudioLanguage : "",
+                          matchDevice: matchDevice, device: Self.deviceSupport)
+    }
+
+    /// What this device's screen and chip can do, read once.
+    static let deviceSupport: SourcePreferences.DeviceSupport = {
+        let hdr = AVPlayer.eligibleForHDRPlayback
+        let av1 = VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1)
+        // Every iPhone and iPad that plays HDR also plays Dolby Vision.
+        return SourcePreferences.DeviceSupport(hdr: hdr, dolbyVision: hdr, av1: av1)
+    }()
+
+    /// The rules for a download: the same as streaming, with its own size ceiling when one is set.
+    var downloadQuery: SourceQuery {
+        var config = torrentio
+        if downloadMaxSizeGB > 0 { config.maxSizeGB = config.maxSizeGB > 0 ? min(config.maxSizeGB, downloadMaxSizeGB) : downloadMaxSizeGB }
+        return SourceQuery(torrentio: config, addons: addons)
     }
 
     var isDebridConfigured: Bool { torrentio.hasDebrid }
@@ -146,6 +236,27 @@ final class AppSettings: ObservableObject {
         static let homeHidden = "home.hidden"
         static let setupFinished = "setup.finished"
         static let recentSearches = "search.recent"
+        static let autoSkipIntro = "player.autoSkipIntro"
+        static let autoSkipRecap = "player.autoSkipRecap"
+        static let torrentioServer = "torrentio.server"
+        static let priorityLanguages = "torrentio.languages"
+        static let perQualityLimit = "torrentio.limit"
+        static let minSeeders = "torrentio.minSeeders"
+        static let preferHDR = "prefer.hdr"
+        static let preferDV = "prefer.dolbyVision"
+        static let preferAtmos = "prefer.atmos"
+        static let preferRemux = "prefer.remux"
+        static let preferredGroups = "prefer.groups"
+        static let preferAudioReleases = "prefer.audioLanguageReleases"
+        static let matchDevice = "prefer.matchDevice"
+        static let debridAccount = "debrid.account"
+        static let downloadsCellular = "downloads.cellular"
+        static let downloadMaxSize = "downloads.maxSizeGB"
+        static let deleteWatchedAfter = "downloads.deleteWatchedAfterDays"
+        static let downloadSubtitles = "downloads.subtitles"
+        static let notifyEpisodes = "notify.episodes"
+        static let notifyDownloads = "notify.downloads"
+        static let hideWatched = "browse.hideWatched"
     }
 }
 

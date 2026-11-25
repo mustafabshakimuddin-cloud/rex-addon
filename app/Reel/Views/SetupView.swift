@@ -300,7 +300,9 @@ struct SetupView: View {
         saveKey()
         testState = .testing
         switch await DebridCheck.run(settings.torrentio) {
-        case let .success(text): testState = .ok(text)
+        case let .success(pass):
+            testState = .ok(pass.summary)
+            settings.debridAccount = pass.account
         case let .failure(error): testState = .failed(error.localizedDescription)
         }
     }

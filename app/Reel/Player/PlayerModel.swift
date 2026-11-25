@@ -92,6 +92,26 @@ final class PlayerModel: ObservableObject {
     @Published var fillsScreen = false {
         didSet { engine?.videoGravity = fillsScreen ? .resizeAspectFill : .resizeAspect }
     }
+    /// When playback pauses by itself: after a set time, or at the end of this episode.
+    @Published var sleepTimer: SleepTimer? {
+        didSet { sleepFired = false }
+    }
+    /// Raised when the sleep timer paused playback.
+    @Published private(set) var sleepFired = false
+    /// Being held for double speed.
+    @Published private(set) var boosted = false
+
+    enum SleepTimer: Equatable {
+        case at(Date)
+        case endOfEpisode
+
+        var title: String {
+            switch self {
+            case let .at(date): return "Pauses at \(date.formatted(date: .omitted, time: .shortened))"
+            case .endOfEpisode: return "Pauses at the end"
+            }
+        }
+    }
 
     let pip = PictureInPicture()
     private var bag = Set<AnyCancellable>()
@@ -99,6 +119,8 @@ final class PlayerModel: ObservableObject {
     private var restoring = false
     private var lastSaved: Double = -100
     private var onProgress: ((Double, Double) -> Void)?
+    private var loadOptions = LoadOptions()
+    private var rateBeforeBoost: Float = 1
 
     init() {
         engine = EngineHost.engine
@@ -133,6 +155,7 @@ final class PlayerModel: ObservableObject {
             guard let self else { return }
             self.time.currentTime = value
             self.saveProgress(force: false)
+            self.checkSleepTimer()
         }.store(in: &bag)
         // The PiP button reads pip.isPossible, which turns true a moment after the layer is ready;
         // pass its changes through so the player view redraws when it does.
@@ -145,19 +168,29 @@ final class PlayerModel: ObservableObject {
     }
 
     func start(url: URL, title: String, subtitle: String?, startAt: Double?,
-               audioLanguages: [String], subtitleLanguages: [String],
+               audioLanguages: [String], subtitleLanguages: [String], artwork: URL? = nil,
+               localSubtitles: [URL] = [],
                onProgress: @escaping (Double, Double) -> Void) {
         guard !started, let engine else { return }
         started = true
         self.onProgress = onProgress
-        engine.videoGravity = .resizeAspect
+        engine.videoGravity = fillsScreen ? .resizeAspectFill : .resizeAspect
 
         var options = LoadOptions()
         options.preferredAudioLanguages = audioLanguages
         options.preferredSubtitleLanguages = subtitleLanguages
+        loadOptions = options
         var info: [String: Any] = [MPMediaItemPropertyTitle: title]
         if let subtitle { info[MPMediaItemPropertyArtist] = subtitle }
         engine.setNowPlayingInfo(info)
+        // The lock screen and Control Center show the title's picture once it has loaded.
+        if let artwork {
+            Task {
+                guard let image = await ImageLoader.shared.image(for: artwork, maxPixelSize: 600) else { return }
+                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                engine.setNowPlayingInfo(info)
+            }
+        }
 
         Task {
             // We mount the engine's layer ourselves rather than AVPlayerViewController, so we
@@ -165,12 +198,60 @@ final class PlayerModel: ObservableObject {
             try? AVAudioSession.sharedInstance().setActive(true)
             do {
                 _ = try await engine.load(url: url, startPosition: startAt, options: options)
+                for file in localSubtitles {
+                    let language = file.deletingPathExtension().pathExtension
+                    let name = "\(Languages.name(for: language)) · Saved"
+                    _ = engine.addExternalSubtitleTrack(ExternalSubtitleTrack(url: file, name: name, language: language))
+                }
             } catch is CancellationError {
                 // A newer load replaced this one; not a failure.
             } catch {
                 errorMessage = Self.message(for: error)
             }
         }
+    }
+
+    /// Opens a fresh address for the same file at the same place, after a link expired.
+    func reload(url: URL, at position: Double?) {
+        guard let engine else { return }
+        errorMessage = nil
+        let at = position.flatMap { $0 > 1 ? $0 : nil }
+        Task {
+            do {
+                _ = try await engine.load(url: url, startPosition: at, options: loadOptions)
+            } catch is CancellationError {
+            } catch {
+                errorMessage = Self.message(for: error)
+            }
+        }
+    }
+
+    // MARK: Sleep timer
+
+    private func checkSleepTimer() {
+        guard case let .at(date)? = sleepTimer, !sleepFired, Date() >= date else { return }
+        sleepFired = true
+        sleepTimer = nil
+        if isPlaying { engine?.togglePlayPause() }
+        sleepFired = true
+    }
+
+    /// The end-of-episode timer: playback stops instead of going on to the next one.
+    var stopsAtEnd: Bool { sleepTimer == .endOfEpisode }
+
+    // MARK: Hold for speed
+
+    func beginBoost() {
+        guard !boosted, isPlaying else { return }
+        rateBeforeBoost = rate
+        boosted = true
+        setRate(2)
+    }
+
+    func endBoost() {
+        guard boosted else { return }
+        boosted = false
+        setRate(rateBeforeBoost)
     }
 
     func stop() {

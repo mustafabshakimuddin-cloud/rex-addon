@@ -16,7 +16,10 @@ struct CalendarEpisode: Identifiable, Hashable {
 /// lately. One Cinemeta request covers them all, and the answer is reused for half an hour.
 @MainActor
 final class UpcomingStore: ObservableObject {
-    @Published private(set) var episodes: [CalendarEpisode] = []
+    @Published private(set) var episodes: [CalendarEpisode] = [] { didSet { newCache = nil } }
+    /// New episodes by series, for one library revision: Home and the badge ask several times
+    /// per redraw.
+    private var newCache: (revision: Int, value: [String: [CalendarEpisode]])?
     @Published private(set) var isLoading = false
     @Published private(set) var error: String?
     @Published private(set) var loadedAt: Date?
@@ -77,6 +80,13 @@ final class UpcomingStore: ObservableObject {
     /// started in that series, grouped by series, each in episode order. Marking an episode
     /// watched also settles every earlier one: you've moved past them.
     func unwatchedNew(_ library: Library) -> [String: [CalendarEpisode]] {
+        if let newCache, newCache.revision == library.revision { return newCache.value }
+        let value = computeUnwatchedNew(library)
+        newCache = (library.revision, value)
+        return value
+    }
+
+    private func computeUnwatchedNew(_ library: Library) -> [String: [CalendarEpisode]] {
         let cutoff = Date().addingTimeInterval(-Self.newWindow)
         let recent = episodes.filter { $0.hasAired && $0.date > cutoff }
         var bySeries: [String: [CalendarEpisode]] = [:]
@@ -96,10 +106,11 @@ final class UpcomingStore: ObservableObject {
 
     /// One card per series: the next new episode to watch, most recently aired series first.
     func newEpisodes(_ library: Library) -> [CalendarEpisode] {
-        unwatchedNew(library).values.compactMap(\.first).sorted { lhs, rhs in
-            let a = episodes.last { $0.item.id == lhs.item.id && $0.hasAired }?.date ?? lhs.date
-            let b = episodes.last { $0.item.id == rhs.item.id && $0.hasAired }?.date ?? rhs.date
-            return a > b
+        // The latest aired date per series, once, rather than a scan per comparison.
+        var latest: [String: Date] = [:]
+        for entry in episodes where entry.hasAired { latest[entry.item.id] = max(latest[entry.item.id] ?? .distantPast, entry.date) }
+        return unwatchedNew(library).values.compactMap(\.first).sorted { lhs, rhs in
+            (latest[lhs.item.id] ?? lhs.date) > (latest[rhs.item.id] ?? rhs.date)
         }
     }
 

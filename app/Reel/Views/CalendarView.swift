@@ -98,6 +98,7 @@ struct CalendarView: View {
             .padding(.vertical, 12)
         }
         .background(Theme.Backdrop())
+        .scrollsToTopOnRetap(.calendar)
         .navigationTitle("Calendar")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

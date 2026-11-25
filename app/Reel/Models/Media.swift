@@ -95,3 +95,24 @@ extension KeyedDecodingContainer {
         return URL(string: text)
     }
 }
+
+extension MediaItem {
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, name, poster, background, logo, year, rating, genres, overview
+    }
+
+    /// Saved titles from any version: fields added later may be missing from older files.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(MediaKind.self, forKey: .kind)
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? id
+        poster = try? c.decodeIfPresent(URL.self, forKey: .poster)
+        background = try? c.decodeIfPresent(URL.self, forKey: .background)
+        logo = try? c.decodeIfPresent(URL.self, forKey: .logo)
+        year = try? c.decodeIfPresent(String.self, forKey: .year)
+        rating = try? c.decodeIfPresent(String.self, forKey: .rating)
+        genres = ((try? c.decodeIfPresent([String].self, forKey: .genres)) ?? nil) ?? []
+        overview = try? c.decodeIfPresent(String.self, forKey: .overview)
+    }
+}

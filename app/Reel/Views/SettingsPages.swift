@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Stremio addons whose streams are merged with Torrentio's.
 struct AddonsView: View {
@@ -280,5 +281,105 @@ struct HomeLayoutView: View {
                 if shown { settings.homeHidden.remove(section) } else { settings.homeHidden.insert(section) }
             }
         )
+    }
+}
+
+/// How offline copies are made and kept.
+struct OfflineSettingsView: View {
+    @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var router: AppRouter
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Download over cellular", isOn: $settings.downloadsOverCellular)
+                Picker("Largest download", selection: $settings.downloadMaxSizeGB) {
+                    Text("Same as streaming").tag(0)
+                    ForEach([2, 4, 8, 15, 30], id: \.self) { Text("\($0) GB").tag($0) }
+                }
+                Toggle("Save subtitles with downloads", isOn: $settings.downloadSubtitles)
+            } footer: {
+                Text("Downloads pick the release Play would, within this size. Subtitles in your subtitle language come from OpenSubtitles and play offline too.")
+            }
+            Section {
+                Picker("Delete after watching", selection: $settings.deleteWatchedDownloadsAfterDays) {
+                    Text("Never").tag(0)
+                    ForEach([1, 3, 7, 14, 30], id: \.self) { Text($0 == 1 ? "After a day" : "After \($0) days").tag($0) }
+                }
+            } footer: {
+                Text("A copy you've finished watching is deleted this long after, to free space.")
+            }
+            Section {
+                Button("Open Downloads") { router.openLibrary(.downloads) }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .navigationTitle("Offline Copies")
+    }
+}
+
+/// A file with My List, history, source memory and settings, to restore after a reinstall. Keys
+/// and Trakt's sign-in stay in the Keychain and are never written to it.
+struct BackupView: View {
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var memory: SourceMemory
+    @State private var exportURL: URL?
+    @State private var importing = false
+    @State private var message: String?
+    @State private var confirmRestore: URL?
+
+    var body: some View {
+        Form {
+            Section {
+                if let exportURL {
+                    ShareLink(item: exportURL) { Label("Save Backup…", systemImage: "square.and.arrow.up") }
+                } else {
+                    ProgressView()
+                }
+            } footer: {
+                Text("Saves My List, your history and resume points, what \(AppConfig.name) learned about sources, addons and settings. Your debrid key and Trakt sign-in aren't included; enter them again after restoring.")
+            }
+            Section {
+                Button("Restore from a Backup…") { importing = true }
+            } footer: {
+                Text("Replaces My List, history and settings on this device with the backup's.")
+            }
+            if let message {
+                Section { Text(message).font(.footnote) }
+            }
+            if !JSONFile.unreadableFiles.isEmpty {
+                Section {
+                    Text("These files couldn't be read at launch and were kept aside rather than lost: \(JSONFile.unreadableFiles.joined(separator: ", ")). A backup restores what they held.")
+                        .font(.footnote).foregroundStyle(Theme.warning)
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .navigationTitle("Back Up and Restore")
+        .task { exportURL = Backup.write(library: library, memory: memory) }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
+            if case let .success(url) = result { confirmRestore = url }
+        }
+        .confirmationDialog("Replace this device's library and settings with the backup?",
+                            isPresented: Binding(get: { confirmRestore != nil }, set: { if !$0 { confirmRestore = nil } }),
+                            titleVisibility: .visible) {
+            Button("Restore", role: .destructive) {
+                if let url = confirmRestore { restore(url) }
+            }
+        }
+    }
+
+    private func restore(_ url: URL) {
+        let access = url.startAccessingSecurityScopedResource()
+        defer { if access { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            try Backup.restore(data, library: library, memory: memory)
+            message = "Restored. Close and reopen \(AppConfig.name) for the restored settings to take effect."
+        } catch {
+            message = "That file isn't a \(AppConfig.name) backup."
+        }
     }
 }

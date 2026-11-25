@@ -57,6 +57,15 @@ struct SettingsView: View {
                     if let page = settings.debridService.keyPage {
                         Link(destination: page) { Label("Get your \(settings.debridService.name) API key", systemImage: "arrow.up.right.square") }
                     }
+                    if let account = settings.debridAccount {
+                        if let name = account.username { LabeledContent("Account", value: name) }
+                        if let expires = account.expires {
+                            LabeledContent("Plan ends") {
+                                Text(expires.formatted(date: .abbreviated, time: .omitted))
+                                    .foregroundStyle((account.daysLeft ?? 99) <= 7 ? Theme.warning : Theme.secondaryText)
+                            }
+                        }
+                    }
                 }
             } header: {
                 Text("Debrid Service")
@@ -82,6 +91,9 @@ struct SettingsView: View {
             Section {
                 Toggle("Play next episode automatically", isOn: $settings.autoPlayNext)
                 Toggle("Show Skip Intro and Skip Credits", isOn: $settings.showSkipButtons)
+                Toggle("Skip intros automatically", isOn: $settings.autoSkipIntro)
+                Toggle("Skip recaps automatically", isOn: $settings.autoSkipRecap)
+                Button("Forget player choices") { ViewingPreferences.forgetAll() }
                 Button("Forget source history", role: .destructive) { confirmForget = true }
                     .confirmationDialog("Forget which sources played well and which failed?", isPresented: $confirmForget, titleVisibility: .visible) {
                         Button("Forget", role: .destructive) { memory.forgetAll() }
@@ -89,7 +101,7 @@ struct SettingsView: View {
             } header: {
                 Text("Playback")
             } footer: {
-                Text("\(AppConfig.name) remembers which releases played and which failed, and uses that when it picks a source for you. Skip buttons appear when a file's chapters name the intro, recap or credits.")
+                Text("\(AppConfig.name) remembers which releases played and which failed, and uses that when it picks a source for you. Skip buttons appear when a file's chapters name the intro, recap or credits. Each series also remembers its audio and subtitle language, subtitle timing, fill and speed.")
             }
 
             Section {
@@ -137,6 +149,18 @@ struct SettingsView: View {
             }
 
             Section {
+                NavigationLink(value: SettingsPage.offline) {
+                    LabeledContent("Offline copies", value: settings.downloadsOverCellular ? "Wi-Fi and cellular" : "Wi-Fi only")
+                }
+                Toggle("Tell me about new episodes", isOn: $settings.notifyNewEpisodes)
+                Toggle("Tell me when a download finishes", isOn: $settings.notifyDownloads)
+            } header: {
+                Text("Downloads and Notifications")
+            } footer: {
+                Text("New episodes of the series you follow are checked in the background a few times a day.")
+            }
+
+            Section {
                 NavigationLink(value: SettingsPage.appearance) {
                     LabeledContent("Appearance") {
                         HStack(spacing: 6) {
@@ -147,6 +171,9 @@ struct SettingsView: View {
                 }
                 NavigationLink(value: SettingsPage.homeScreen) {
                     LabeledContent("Home Screen", value: "\(settings.visibleHomeSections.count) sections")
+                }
+                NavigationLink(value: SettingsPage.backup) {
+                    Label("Back Up and Restore", systemImage: "externaldrive.badge.icloud")
                 }
             } header: {
                 Text("Customise")
@@ -170,6 +197,8 @@ struct SettingsView: View {
             case .trakt: TraktSettingsView()
             case .appearance: AppearanceView()
             case .homeScreen: HomeLayoutView()
+            case .offline: OfflineSettingsView()
+            case .backup: BackupView()
             }
         }
         .onAppear { keyDraft = settings.debridKey }
@@ -216,11 +245,13 @@ struct SettingsView: View {
         settings.debridKey = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The same path playback takes, so a pass here means playback will work.
+    /// The key as playback uses it, checked without adding anything to the account.
     private func test() async {
         testState = .testing
         switch await DebridCheck.run(settings.torrentio) {
-        case let .success(text): testState = .ok(text)
+        case let .success(pass):
+            testState = .ok(pass.summary)
+            settings.debridAccount = pass.account
         case let .failure(error): testState = .failed(error.localizedDescription)
         }
     }
@@ -260,13 +291,100 @@ struct PickRulesView: View {
                 } label: {
                     LabeledContent("Providers", value: settings.providers.isEmpty ? "All" : "\(settings.providers.count) selected")
                 }
+                Picker("Minimum seeders", selection: $settings.minSeeders) {
+                    Text("Any").tag(0)
+                    ForEach([5, 10, 25, 50], id: \.self) { Text("\($0)").tag($0) }
+                }
             } footer: {
-                Text("Play picks instant sources first, then your quality order, then what has played well for you before. Changes apply to the next search.")
+                Text("Play picks instant sources first, then your quality order, then your preferences below, then what has played well for you before. Changes apply to the next search. The seeder minimum applies to releases that aren't instant.")
+            }
+            Section {
+                leaning("HDR", $settings.preferHDR)
+                leaning("Dolby Vision", $settings.preferDolbyVision)
+                leaning("Dolby Atmos", $settings.preferAtmos)
+                leaning("Remux", $settings.preferRemux)
+                Toggle("Favour my audio language", isOn: $settings.preferAudioLanguageReleases)
+                Toggle("Match this device", isOn: $settings.matchDevice)
+                NavigationLink {
+                    GroupsList()
+                } label: {
+                    LabeledContent("Preferred groups", value: settings.preferredGroups.isEmpty ? "None" : settings.preferredGroups.joined(separator: ", "))
+                }
+            } header: {
+                Text("Preferences")
+            } footer: {
+                Text("Within a quality, these decide which release comes first. Matching the device passes over Dolby Vision and HDR on screens that can't show them, and AV1 where the chip can't decode it\(AppSettings.deviceSupport.av1 ? "" : " (this one can't)"). Long-press a source to prefer its release group.")
+            }
+            Section {
+                TextField("Server", text: $settings.torrentioServer)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                if settings.torrentioServer != Torrentio.base {
+                    Button("Use the public server") { settings.torrentioServer = Torrentio.base }
+                }
+                NavigationLink {
+                    MultiSelectList(title: "Language Priority", options: TorrentioConfig.languageOptions, selection: $settings.priorityLanguages,
+                                    label: { $0.capitalized })
+                } label: {
+                    LabeledContent("Language priority", value: settings.priorityLanguages.isEmpty ? "None" : settings.priorityLanguages.map(\.capitalized).joined(separator: ", "))
+                }
+                Picker("Results per quality", selection: $settings.perQualityLimit) {
+                    Text("All").tag(0)
+                    ForEach([3, 5, 10, 20], id: \.self) { Text("\($0)").tag($0) }
+                }
+            } header: {
+                Text("Torrentio")
+            } footer: {
+                Text("A self-hosted Torrentio can stand in for the public one. Languages listed here come first in Torrentio's results.")
             }
         }
         .scrollContentBackground(.hidden)
         .background(Theme.Backdrop())
         .navigationTitle("Pick Rules")
+    }
+
+    private func leaning(_ title: String, _ value: Binding<Leaning>) -> some View {
+        Picker(title, selection: value) {
+            ForEach(Leaning.allCases) { Text($0.title).tag($0) }
+        }
+    }
+}
+
+/// Release groups whose releases come first within a quality.
+private struct GroupsList: View {
+    @EnvironmentObject private var settings: AppSettings
+    @State private var draft = ""
+
+    var body: some View {
+        List {
+            Section {
+                HStack {
+                    TextField("Group, e.g. FLUX", text: $draft)
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.characters)
+                        .onSubmit(add)
+                    Button("Add", action: add).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            } footer: {
+                Text("The group is the name after the last dash in a release: “FLUX” in Movie.2024.2160p.WEB-DL.DV-FLUX.")
+            }
+            Section {
+                ForEach(settings.preferredGroups, id: \.self) { Text($0) }
+                    .onDelete { settings.preferredGroups.remove(atOffsets: $0) }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .navigationTitle("Preferred Groups")
+    }
+
+    private func add() {
+        let group = draft.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !group.isEmpty, !settings.preferredGroups.contains(group) else { return }
+        settings.preferredGroups.append(group)
+        draft = ""
     }
 }
 

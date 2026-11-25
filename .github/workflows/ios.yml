@@ -40,6 +40,16 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
+      # AetherEngine ships a prebuilt decode stack; fetching it on every push is most of the wait.
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-device-${{ hashFiles('app/project.yml') }}
+          restore-keys: spm-device-
+
       - name: Build for device (unsigned)
         run: |
           set -o pipefail
@@ -129,7 +139,14 @@ jobs:
           TAG="v$VERSION"
           mv Reel-unsigned.ipa Reel.ipa
           SUMMARY=$(printf '%s\n' "$COMMIT_MESSAGE" | head -1)
-          NOTES="$SUMMARY"$'\n\n'"Unsigned build of ${GITHUB_SHA::7}. Install with SideStore, AltStore or Sideloadly."
+          # Every change since the previous build, not just the last commit's first line.
+          PREVIOUS=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          CHANGES=""
+          if [ -n "$PREVIOUS" ] && git fetch --quiet --depth=300 origin "+refs/tags/$PREVIOUS:refs/tags/$PREVIOUS" "$GITHUB_SHA" 2>/dev/null; then
+            CHANGES=$(git log --no-merges --format='- %s' "$PREVIOUS..$GITHUB_SHA" | grep -v '^- ci:' | head -40 || true)
+          fi
+          [ -z "$CHANGES" ] && CHANGES="- $SUMMARY"
+          NOTES="$CHANGES"$'\n\n'"Unsigned build of ${GITHUB_SHA::7}. Install with SideStore, AltStore or Sideloadly."
           # Marked as GitHub's latest release, so .../releases/latest/download/Reel.ipa always
           # names the newest build.
           gh release create "$TAG" Reel.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
@@ -178,6 +195,15 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-sim-${{ hashFiles('app/project.yml') }}
+          restore-keys: spm-sim-
+
       - name: Build for simulator
         run: |
           set -o pipefail
@@ -186,6 +212,19 @@ jobs:
             -destination 'generic/platform=iOS Simulator' -configuration Debug -derivedDataPath build \
             -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee sim.log | grep -E "error:|\*\* BUILD" || true
           grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
+
+      - name: Run the tests
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys; d=json.load(sys.stdin)['devices']
+          c=[(r,x['udid']) for r,l in d.items() for x in l if x['name'].startswith('iPhone 17')]
+          print(sorted(c, reverse=True)[0][1] if c else '')")
+          if [ -z "$UDID" ]; then echo "::warning::No iPhone 17 simulator; tests skipped"; exit 0; fi
+          xcodebuild test -project Reel.xcodeproj -scheme Reel -destination "id=$UDID" -derivedDataPath build \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee test.log | grep -E "error:|✘|✔ Test run|recorded an issue|\*\* TEST" || true
+          grep -q "\*\* TEST SUCCEEDED \*\*" test.log
 
       - name: Launch and screenshot
         # About two minutes a screen across both simulators, plus booting and installing.

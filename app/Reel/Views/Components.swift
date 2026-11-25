@@ -277,14 +277,16 @@ struct ContinueCard: View {
                 }
                 .padding(10)
                 .padding(.bottom, 4)
-                GeometryReader { proxy in
-                    Capsule().fill(.white.opacity(0.25)).frame(height: 4)
-                        .overlay(alignment: .leading) {
-                            Capsule().fill(Theme.accentGradient).frame(width: proxy.size.width * entry.fraction, height: 4)
-                        }
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+                if !entry.isUpNext {
+                    GeometryReader { proxy in
+                        Capsule().fill(.white.opacity(0.25)).frame(height: 4)
+                            .overlay(alignment: .leading) {
+                                Capsule().fill(Theme.accentGradient).frame(width: proxy.size.width * entry.fraction, height: 4)
+                            }
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                    }
+                    .padding(.horizontal, 10).padding(.bottom, 6)
                 }
-                .padding(.horizontal, 10).padding(.bottom, 6)
             }
             .frame(width: width, height: width * 9 / 16)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -301,6 +303,7 @@ struct ContinueCard: View {
     }
 
     private var remaining: String {
+        if entry.isUpNext { return "Next episode" }
         let minutes = Int(max(0, entry.duration - entry.position) / 60)
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m left" : "\(minutes)m left"
     }
@@ -391,4 +394,25 @@ extension View {
     func readableWidth(_ maxWidth: CGFloat = 980) -> some View {
         frame(maxWidth: maxWidth).frame(maxWidth: .infinity)
     }
+}
+
+/// Scrolls a tab's first screen back to the top when its tab is chosen again.
+private struct ScrollToTopOnRetap: ViewModifier {
+    let tab: AppTab
+    @EnvironmentObject private var router: AppRouter
+    @State private var position = ScrollPosition(edge: .top)
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onChange(of: router.scrollToTop) { _, chosen in
+                guard chosen == tab else { return }
+                withAnimation(.snappy) { position.scrollTo(edge: .top) }
+                router.didScrollToTop()
+            }
+    }
+}
+
+extension View {
+    func scrollsToTopOnRetap(_ tab: AppTab) -> some View { modifier(ScrollToTopOnRetap(tab: tab)) }
 }

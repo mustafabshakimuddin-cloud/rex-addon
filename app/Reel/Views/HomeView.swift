@@ -90,6 +90,7 @@ struct HomeView: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { width = $0.width; height = $0.height }
         .ignoresSafeArea(edges: heroFirst ? .top : [])
         .background(Theme.Backdrop())
+        .scrollsToTopOnRetap(.home)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topTrailing) {
             Button { router.openSettings() } label: {

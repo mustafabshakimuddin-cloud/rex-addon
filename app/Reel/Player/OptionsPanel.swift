@@ -144,6 +144,27 @@ struct OptionsPanel: View {
                 model.setRate(value)
             }
         }
+        Text("SLEEP TIMER").font(.caption2.weight(.bold)).foregroundStyle(.white.opacity(0.5))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 10)
+        row(selected: model.sleepTimer == nil, title: "Off", detail: nil, tags: []) { model.sleepTimer = nil }
+        ForEach([15, 30, 45, 60, 90], id: \.self) { minutes in
+            row(selected: isTimer(minutes), title: "\(minutes) minutes",
+                detail: isTimer(minutes) ? model.sleepTimer?.title : nil, tags: []) {
+                model.sleepTimer = .at(Date().addingTimeInterval(Double(minutes) * 60))
+                timerMinutes = minutes
+            }
+        }
+        row(selected: model.sleepTimer == .endOfEpisode, title: "At the end of this one", detail: nil, tags: []) {
+            model.sleepTimer = .endOfEpisode
+        }
+    }
+
+    @State private var timerMinutes: Int?
+
+    private func isTimer(_ minutes: Int) -> Bool {
+        if case .at? = model.sleepTimer { return timerMinutes == minutes }
+        return false
     }
 
     @ViewBuilder private var footer: some View {
@@ -263,44 +284,5 @@ enum TrackLabel {
         let trimmed = code.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed.lowercased() != "und" else { return nil }
         return Locale.current.localizedString(forLanguageCode: trimmed) ?? trimmed.uppercased()
-    }
-}
-
-/// Language preferences, stored as ISO 639-2 codes; the engine matches against the tags files
-/// carry, which can be either form, so both are offered.
-enum Languages {
-    static let options: [(String, String)] = [
-        ("", "Default"),
-        ("eng", "English"), ("spa", "Spanish"), ("fre", "French"), ("ger", "German"), ("ita", "Italian"),
-        ("por", "Portuguese"), ("ara", "Arabic"), ("hin", "Hindi"), ("urd", "Urdu"), ("tur", "Turkish"),
-        ("rus", "Russian"), ("jpn", "Japanese"), ("kor", "Korean"), ("chi", "Chinese"),
-    ]
-
-    private static let twoLetter = [
-        "eng": "en", "spa": "es", "fre": "fr", "ger": "de", "ita": "it", "por": "pt", "ara": "ar",
-        "hin": "hi", "urd": "ur", "tur": "tr", "rus": "ru", "jpn": "ja", "kor": "ko", "chi": "zh",
-    ]
-    private static let alternates = ["fre": "fra", "ger": "deu", "chi": "zho"]
-
-    static func codes(for code: String) -> [String] {
-        guard !code.isEmpty else { return [] }
-        return [twoLetter[code], code, alternates[code]].compactMap { $0 }
-    }
-}
-
-extension Languages {
-    /// A readable name for a language code in any of the forms files and services use.
-    static func name(for code: String) -> String {
-        let lower = code.lowercased()
-        if let match = options.first(where: { $0.0 == lower || codes(for: $0.0).contains(lower) }), !match.0.isEmpty {
-            return match.1
-        }
-        return TrackLabel.languageName(lower) ?? code.uppercased()
-    }
-
-    /// Whether two codes name the same language ("en", "eng").
-    static func matches(_ code: String, preferred: String) -> Bool {
-        guard !preferred.isEmpty else { return false }
-        return codes(for: preferred).contains(code.lowercased())
     }
 }

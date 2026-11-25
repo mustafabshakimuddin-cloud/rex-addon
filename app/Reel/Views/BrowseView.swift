@@ -33,8 +33,37 @@ final class BrowseModel: ObservableObject {
             exhausted = next.isEmpty
             error = nil
         } catch {
-            if items.isEmpty { self.error = error.localizedDescription }
+            self.error = error.localizedDescription
         }
+    }
+}
+
+/// How a grid orders what it has loaded.
+enum GridOrder: String, CaseIterable, Identifiable {
+    case list, newest, rating
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .list: return "List order"
+        case .newest: return "Newest first"
+        case .rating: return "Highest rated"
+        }
+    }
+
+    func apply(_ items: [MediaItem]) -> [MediaItem] {
+        switch self {
+        case .list: return items
+        case .newest: return items.sorted { ($0.year ?? "") > ($1.year ?? "") }
+        case .rating: return items.sorted { (Double($0.rating ?? "") ?? 0) > (Double($1.rating ?? "") ?? 0) }
+        }
+    }
+}
+
+extension Library {
+    /// The titles a list shows: all of them, or with films you've watched left out.
+    func shown(_ items: [MediaItem], hidingWatched: Bool) -> [MediaItem] {
+        guard hidingWatched else { return items }
+        return items.filter { $0.kind != .movie || !isWatched(PlaybackTarget(item: $0)) }
     }
 }
 
@@ -49,6 +78,7 @@ enum ExploreLayout: String, CaseIterable, Identifiable {
 /// shows one list at a time with its filters, loading more as you go.
 struct ExploreView: View {
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var settings: AppSettings
     @AppStorage("explore.layout") private var layout: ExploreLayout = .rows
 
     var body: some View {
@@ -69,6 +99,7 @@ struct ExploreView: View {
             .padding(.vertical, 12)
         }
         .background(Theme.Backdrop())
+        .scrollsToTopOnRetap(.explore)
         .navigationTitle("Explore")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -76,6 +107,7 @@ struct ExploreView: View {
                     Picker("Layout", selection: $layout) {
                         ForEach(ExploreLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                     }
+                    Toggle(isOn: $settings.hideWatched) { Label("Hide Watched Films", systemImage: "eye.slash") }
                 } label: {
                     Label("Layout", systemImage: layout.systemImage)
                 }
@@ -104,7 +136,7 @@ private struct ExploreRows: View {
         return [Shelf(title: "Popular", catalog: .popular, genre: nil),
                 Shelf(title: "New in \(year ?? "")", catalog: .newest, genre: year),
                 Shelf(title: "Top Rated", catalog: .topRated, genre: nil)]
-            + Cinemeta.genres.map { Shelf(title: $0, catalog: .popular, genre: $0) }
+            + Cinemeta.genres(for: kind).map { Shelf(title: $0, catalog: .popular, genre: $0) }
     }
 
     var body: some View {
@@ -124,10 +156,14 @@ struct LazyShelf: View {
     let genre: String?
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var downloads: DownloadStore
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
-    @State private var items: [MediaItem] = []
+    @State private var loaded: [MediaItem] = []
     @State private var failed = false
+    @State private var attempt = 0
+
+    private var items: [MediaItem] { library.shown(loaded, hidingWatched: settings.hideWatched) }
 
     var body: some View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
@@ -136,7 +172,13 @@ struct LazyShelf: View {
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: title).padding(.horizontal, 20)
                     if failed {
-                        Text("Couldn't load this row.").font(.footnote).foregroundStyle(Theme.secondaryText).padding(.horizontal, 20)
+                        HStack(spacing: 10) {
+                            Text("Couldn't load this row.").font(.footnote).foregroundStyle(Theme.secondaryText)
+                            Button("Retry") { attempt += 1 }.font(.footnote.weight(.semibold))
+                        }
+                        .padding(.horizontal, 20)
+                    } else if !loaded.isEmpty {
+                        Text("You've watched everything here.").font(.footnote).foregroundStyle(Theme.secondaryText).padding(.horizontal, 20)
                     } else {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 14) {
@@ -160,11 +202,11 @@ struct LazyShelf: View {
                 }
             }
         }
-        .task(id: "\(kind.rawValue)|\(catalog.rawValue)|\(genre ?? "")") {
-            items = []
+        .task(id: "\(kind.rawValue)|\(catalog.rawValue)|\(genre ?? "")|\(attempt)") {
+            loaded = []
             failed = false
             do {
-                items = Array(try await Cinemeta.catalog(kind, catalog, genre: genre).prefix(20))
+                loaded = Array(try await Cinemeta.catalog(kind, catalog, genre: genre).prefix(20))
             } catch {
                 failed = true
             }
@@ -178,6 +220,7 @@ private struct ExploreGrid: View {
     @AppStorage("explore.catalog") private var catalog: Cinemeta.Catalog = .popular
     @State private var genre: String?
     @State private var year: String = Cinemeta.recentYears.first ?? ""
+    @State private var order: GridOrder = .list
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -196,7 +239,7 @@ private struct ExploreGrid: View {
                         }
                     } else {
                         chip("All", selected: genre == nil) { genre = nil }
-                        ForEach(Cinemeta.genres, id: \.self) { value in
+                        ForEach(Cinemeta.genres(for: kind), id: \.self) { value in
                             chip(value, selected: genre == value) { genre = value }
                         }
                     }
@@ -204,7 +247,13 @@ private struct ExploreGrid: View {
                 .padding(.horizontal, 20)
             }
 
-            CatalogGrid(kind: kind, catalog: catalog, genre: catalog.filtersByYear ? year : genre)
+            Picker("Order", selection: $order) {
+                ForEach(GridOrder.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal, 14)
+
+            CatalogGrid(kind: kind, catalog: catalog, genre: catalog.filtersByYear ? year : genre, order: order)
         }
     }
 
@@ -225,17 +274,20 @@ struct CatalogGrid: View {
     let kind: MediaKind
     let catalog: Cinemeta.Catalog
     let genre: String?
+    var order: GridOrder = .list
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var downloads: DownloadStore
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @StateObject private var model = BrowseModel()
 
     var body: some View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
+        let items = order.apply(library.shown(model.items, hidingWatched: settings.hideWatched))
         VStack(spacing: 18) {
             LazyVGrid(columns: metrics.posterColumns, spacing: 22) {
-                ForEach(model.items) { item in
+                ForEach(items) { item in
                     NavigationLink(value: item) {
                         PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads))
                     }
@@ -252,10 +304,16 @@ struct CatalogGrid: View {
 
             if model.isLoading {
                 ProgressView().frame(maxWidth: .infinity).padding()
-            } else if let error = model.error {
+            } else if let error = model.error, model.items.isEmpty {
                 StateMessage(title: "Couldn't load", message: error, actionTitle: "Retry") {
                     Task { await model.reset(kind: kind, catalog: catalog, genre: genre) }
                 }
+            } else if model.error != nil {
+                Button("Couldn't load more. Retry", systemImage: "arrow.clockwise") {
+                    Task { await model.loadMore(kind: kind, catalog: catalog, genre: genre) }
+                }
+                .buttonStyle(.glass)
+                .padding()
             } else if model.items.isEmpty {
                 StateMessage(title: "Nothing here", message: "This list has no titles right now.", systemImage: "tray")
             }
@@ -296,6 +354,8 @@ struct SearchView: View {
     @State private var movies: [MediaItem] = []
     @State private var series: [MediaItem] = []
     @State private var isSearching = false
+    @State private var searchError: String?
+    @State private var attempt = 0
     @State private var scope: SearchScope = .all
 
     enum SearchScope: String, CaseIterable, Identifiable {
@@ -320,7 +380,14 @@ struct SearchView: View {
                 } else if scope == .people {
                     PersonResults(name: trimmed)
                 } else {
-                    if !isSearching && movies.isEmpty && series.isEmpty {
+                    if let searchError, !isSearching {
+                        StateMessage(title: "Couldn't search", message: searchError, systemImage: "wifi.exclamationmark", actionTitle: "Retry") {
+                            attempt += 1
+                        }
+                        .padding(.top, 60)
+                    } else if isSearching && movies.isEmpty && series.isEmpty {
+                        ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                    } else if !isSearching && movies.isEmpty && series.isEmpty {
                         StateMessage(title: "No results", message: "Nothing matches “\(query)”. Try People to search by cast or director.",
                                      systemImage: "magnifyingglass", actionTitle: "Search People") { scope = .people }
                             .padding(.top, 60)
@@ -344,25 +411,31 @@ struct SearchView: View {
             .padding(.vertical, 12)
         }
         .background(Theme.Backdrop())
+        .scrollsToTopOnRetap(.search)
         .navigationTitle("Search")
         .searchable(text: $query, prompt: "Titles, cast and directors")
         .searchScopes($scope) {
             ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
         }
         .onSubmit(of: .search) { settings.rememberSearch(query) }
-        .task(id: query) {
+        .task(id: "\(query)|\(attempt)") {
             let text = query
-            guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { movies = []; series = []; return }
+            searchError = nil
+            guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { movies = []; series = []; isSearching = false; return }
+            isSearching = true
+            defer { isSearching = false }
             try? await Task.sleep(nanoseconds: 350_000_000)   // debounce typing
             guard !Task.isCancelled else { return }
-            isSearching = true
-            async let m = try? Cinemeta.search(text, kind: .movie)
-            async let s = try? Cinemeta.search(text, kind: .series)
-            let (foundMovies, foundSeries) = await (m ?? [], s ?? [])
+            async let m = asyncResult { try await Cinemeta.search(text, kind: .movie) }
+            async let s = asyncResult { try await Cinemeta.search(text, kind: .series) }
+            let (foundMovies, foundSeries) = await (m, s)
             guard !Task.isCancelled else { return }
-            movies = foundMovies
-            series = foundSeries
-            isSearching = false
+            movies = (try? foundMovies.get()) ?? []
+            series = (try? foundSeries.get()) ?? []
+            // Both failing is an error worth showing; one failing still shows the other's titles.
+            if case let .failure(error) = foundMovies, case .failure = foundSeries {
+                searchError = PlaybackError.describe(error)
+            }
         }
     }
 

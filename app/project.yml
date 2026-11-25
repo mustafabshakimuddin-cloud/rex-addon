@@ -36,6 +36,9 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
         DEAD_CODE_STRIPPING: YES
+    scheme:
+      testTargets:
+        - ReelTests
     info:
       path: Reel/Info.plist
       properties:
@@ -61,8 +64,32 @@ targets:
         UIUserInterfaceStyle: Dark
         UIBackgroundModes:
           - audio
+          - fetch
+        # The calendar refresh that keeps new-episode notifications current.
+        BGTaskSchedulerPermittedIdentifiers:
+          - community.reel.app.refresh
+        # reel://title/tt0111161?type=movie opens a title.
+        CFBundleURLTypes:
+          - CFBundleURLName: community.reel.app
+            CFBundleURLSchemes:
+              - reel
+        # Handoff of the title on screen between iPhone and iPad.
+        NSUserActivityTypes:
+          - community.reel.app.title
         # Debrid download links are HTTPS, but some providers hand out plain HTTP media links.
         NSAppTransportSecurity:
           NSAllowsArbitraryLoadsForMedia: true
           NSAllowsArbitraryLoads: true
         ITSAppUsesNonExemptEncryption: false
+  # Logic tests: release parsing, ranking, the library's rules. Run in CI on a simulator.
+  ReelTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ReelTests
+    dependencies:
+      - target: Reel
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: community.reel.tests

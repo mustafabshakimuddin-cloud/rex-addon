@@ -1,19 +1,33 @@
 import Foundation
 import Combine
 
-/// The same path playback takes: ask Torrentio for a well-known film through the debrid service
-/// and resolve the first instant source. A pass here means Play will work.
+/// Checks the key the way playback will use it, without changing the account: the service's own
+/// account page says whether the key is accepted and when the plan ends, and a Torrentio search
+/// with the key must come back with instant releases. Nothing is resolved, so no torrent is added
+/// to the account (resolving is what adds one).
 enum DebridCheck {
-    static func run(_ base: TorrentioConfig) async -> Result<String, Error> {
+    struct Pass: Sendable {
+        let summary: String
+        let account: DebridAccountInfo?
+    }
+
+    static func run(_ base: TorrentioConfig) async -> Result<Pass, Error> {
         var config = base
         config.cachedOnly = true
         do {
+            var account: DebridAccountInfo?
+            do {
+                account = try await DebridAccount.info(service: config.service, key: config.key)
+            } catch DebridAccountError.unsupported {
+                account = nil
+            }
             let sources = try await Torrentio.streams(kind: .movie, videoID: "tt0111161", config: config)
-            guard let first = sources.first(where: { $0.isCached && $0.isPlayable }) else {
+            guard sources.contains(where: { $0.isCached && $0.isPlayable }) else {
                 return .failure(CheckError("No instant sources came back. The key may be wrong, or the service may be down."))
             }
-            _ = try await Torrentio.resolve(first)
-            return .success("Working")
+            var summary = "Working"
+            if let days = account?.daysLeft { summary += days <= 0 ? ", plan ends today" : ", \(days) day\(days == 1 ? "" : "s") left" }
+            return .success(Pass(summary: summary, account: account))
         } catch {
             return .failure(error)
         }
@@ -91,7 +105,7 @@ final class HealthModel: ObservableObject {
         }
         lines.append("")
         for check in checks {
-            lines.append("[\(check.level.label)] \(check.title): \(check.detail)")
+            lines.append("[\(check.level.label)] \(check.title): \(Redact.text(check.detail))")
             if let advice = check.advice, check.level != .ok { lines.append("       Fix: \(advice)") }
         }
         return lines.joined(separator: "\n")
@@ -115,19 +129,25 @@ final class HealthModel: ObservableObject {
         let addons = settings.addons.filter(\.enabled)
         checks = instant + pendingNetworkChecks(config: config, addons: addons)
 
-        async let debrid = debridCheck(config)
-        async let catalogue = reachCheck(id: "cinemeta", title: "Catalogue", systemImage: "square.grid.2x2",
-                                         url: "https://v3-cinemeta.strem.io/manifest.json", service: "Cinemeta")
-        async let torrentio = reachCheck(id: "torrentio", title: "Torrentio", systemImage: "magnifyingglass.circle",
-                                         url: "\(Torrentio.base)/manifest.json", service: "Torrentio")
-        async let addonChecks = addonsCheck(addons)
-        let reachedCatalogue = await catalogue
-        let reachedTorrentio = await torrentio
-        let debridResult = await debrid
-        let addonResults = await addonChecks
-        let network = [reachedCatalogue, reachedTorrentio] + [debridResult].compactMap { $0 } + addonResults
-        for check in network {
-            if let index = checks.firstIndex(where: { $0.id == check.id }) { checks[index] = check } else { checks.append(check) }
+        let torrentioURL = "\(config.serverBase)/manifest.json"
+        await withTaskGroup(of: HealthCheck?.self) { group in
+            group.addTask { await self.debridCheck(config, settings: settings) }
+            group.addTask {
+                await self.reachCheck(id: "cinemeta", title: "Catalogue", systemImage: "square.grid.2x2",
+                                      url: "https://v3-cinemeta.strem.io/manifest.json", service: "Cinemeta")
+            }
+            group.addTask {
+                await self.reachCheck(id: "torrentio", title: "Torrentio", systemImage: "magnifyingglass.circle",
+                                      url: torrentioURL, service: "Torrentio")
+            }
+            for addon in addons {
+                group.addTask { await self.addonCheck(addon) }
+            }
+            // Each row is filled in as its check finishes, not when the slowest one does.
+            for await check in group {
+                guard let check else { continue }
+                if let index = checks.firstIndex(where: { $0.id == check.id }) { checks[index] = check } else { checks.append(check) }
+            }
         }
     }
 
@@ -181,16 +201,25 @@ final class HealthModel: ObservableObject {
                            fix: .settings(.pickRules), fixTitle: "Pick Rules")
     }
 
-    private func debridCheck(_ config: TorrentioConfig) async -> HealthCheck? {
+    private func debridCheck(_ config: TorrentioConfig, settings: AppSettings) async -> HealthCheck? {
         guard config.hasDebrid else { return nil }
         let result = await DebridCheck.run(config)
         switch result {
-        case .success:
-            return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .ok,
-                               detail: "Key accepted; an instant source resolved.")
+        case let .success(pass):
+            settings.debridAccount = pass.account
+            var detail = "Key accepted; instant sources found."
+            if let account = pass.account, let expires = account.expires {
+                detail += " Plan ends \(expires.formatted(date: .abbreviated, time: .omitted))."
+            }
+            if let days = pass.account?.daysLeft, days <= 7 {
+                return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .warning,
+                                   detail: detail, advice: "Renew the plan, or streams stop when it ends.",
+                                   fix: config.service.accountPage.map(HealthCheck.Fix.link), fixTitle: "Renew")
+            }
+            return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .ok, detail: detail)
         case let .failure(error):
             return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .problem,
-                               detail: error.localizedDescription,
+                               detail: Redact.text(error.localizedDescription),
                                advice: "Check the API key in Settings. If it is right, the service may be down or your plan may have ended.",
                                fix: config.service.keyPage.map(HealthCheck.Fix.link) ?? .settingsHome,
                                fixTitle: config.service.keyPage == nil ? "Settings" : "Get Key")
@@ -206,26 +235,20 @@ final class HealthModel: ObservableObject {
         return HealthCheck(id: id, title: title, systemImage: systemImage, level: .ok, detail: "\(service) is answering.")
     }
 
-    private func addonsCheck(_ addons: [StreamAddon]) async -> [HealthCheck] {
-        await withTaskGroup(of: (Int, HealthCheck).self) { group in
-            for (index, addon) in addons.enumerated() {
-                group.addTask {
-                    let failure = await Self.reach("\(addon.base)/manifest.json")
-                    let id = "addon:\(addon.id)"
-                    guard let failure else {
-                        return (index, HealthCheck(id: id, title: addon.name, systemImage: "puzzlepiece.extension", level: .ok,
-                                                   detail: "Answering at \(URL(string: addon.base)?.host ?? addon.base)."))
-                    }
-                    return (index, HealthCheck(id: id, title: addon.name, systemImage: "puzzlepiece.extension", level: .warning,
-                                               detail: "Didn't answer: \(failure)",
-                                               advice: "Turn it off under Stremio Addons, or install it again from its configure page.",
-                                               fix: .settings(.addons), fixTitle: "Addons"))
-                }
-            }
-            var results: [(Int, HealthCheck)] = []
-            for await result in group { results.append(result) }
-            return results.sorted { $0.0 < $1.0 }.map(\.1)
+    private func addonCheck(_ addon: StreamAddon) async -> HealthCheck {
+        let started = Date()
+        let failure = await Self.reach("\(addon.base)/manifest.json")
+        let id = "addon:\(addon.id)"
+        guard let failure else {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            return HealthCheck(id: id, title: addon.name, systemImage: "puzzlepiece.extension", level: .ok,
+                               detail: "Answering at \(URL(string: addon.base)?.host ?? "its address") in \(ms) ms."
+                                   + (addon.base.hasPrefix("http://") ? " Its address isn't encrypted." : ""))
         }
+        return HealthCheck(id: id, title: addon.name, systemImage: "puzzlepiece.extension", level: .warning,
+                           detail: "Didn't answer: \(Redact.text(failure))",
+                           advice: "Turn it off under Stremio Addons, or install it again from its configure page.",
+                           fix: .settings(.addons), fixTitle: "Addons")
     }
 
     private func traktCheck(_ trakt: TraktStore) -> HealthCheck {
@@ -288,7 +311,7 @@ final class HealthModel: ObservableObject {
         do {
             let status = try await withTimeout(seconds: 15) { () -> Int in
                 var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-                request.setValue("\(AppConfig.name)/1.0", forHTTPHeaderField: "User-Agent")
+                request.setValue(HTTP.userAgent, forHTTPHeaderField: "User-Agent")
                 let (_, response) = try await HTTP.session.data(for: request)
                 return (response as? HTTPURLResponse)?.statusCode ?? 0
             }

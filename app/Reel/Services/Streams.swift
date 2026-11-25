@@ -36,10 +36,9 @@ struct StreamSource: Identifiable, Hashable, Codable {
 
     /// The scene group that made the release ("FLUX" in "Movie.2024.2160p.WEB-DL.DV-FLUX.mkv").
     var releaseGroup: String? {
-        let name = (file ?? release).replacingOccurrences(of: #"\.(mkv|mp4|avi|m4v|ts|webm)$"#, with: "", options: [.regularExpression, .caseInsensitive])
-        guard let range = name.range(of: #"-([A-Za-z0-9]{2,20})(\[[^\]]*\])?$"#, options: .regularExpression) else { return nil }
-        let group = name[range].dropFirst().split(separator: "[").first.map(String.init) ?? ""
-        return group.isEmpty ? nil : group.uppercased()
+        let name = Pattern.videoExtensionAtEnd.replacing(in: file ?? release, with: "")
+        guard let group = Pattern.releaseGroup.firstGroup(in: name), !group.isEmpty else { return nil }
+        return group.uppercased()
     }
 
     var hasDolbyVision: Bool { tags.contains("DV") }
@@ -103,14 +102,17 @@ enum StremioStreams {
             let lines = text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             let statsIndex = lines.firstIndex { $0.contains("👤") || $0.contains("💾") || $0.contains("⚙️") || $0.contains("🔎") }
             let textLines = (statsIndex.map { Array(lines[..<$0]) } ?? lines).filter { !Self.isDecoration($0) }
-            let stats = statsIndex.map { lines[$0...].joined(separator: " ") } ?? ""
-            let afterStats = statsIndex.map { Array(lines[($0 + 1)...]) } ?? []
+            // The stats run over the lines that carry their markers; what follows (Torrentio's
+            // language flags) is separate, or the provider would read "YTS 🇬🇧 / 🇫🇷".
+            let statsLines = statsIndex.map { start in Array(lines[start...].prefix { Self.isStats($0) }) } ?? []
+            let stats = statsLines.joined(separator: " ")
+            let afterStats = statsIndex.map { Array(lines[($0 + statsLines.count)...]) } ?? []
 
             let release = textLines.first ?? behaviorHints?.filename ?? "Unknown release"
             let file = textLines.count > 1 ? textLines.last : behaviorHints?.filename.flatMap { $0 == release ? nil : $0 }
             let haystack = [name, release, file ?? "", behaviorHints?.filename ?? ""].joined(separator: " ")
 
-            let size = Self.capture(#"💾\s*([\d.,]+\s*[KMGT]?B)"#, in: stats)
+            let size = Pattern.size.firstGroup(in: stats)
             let sizeBytes = size.map(Self.bytes) ?? behaviorHints?.videoSize ?? 0
             let shownSize = size ?? (sizeBytes > 0 ? ByteCountFormatter.string(fromByteCount: Int64(sizeBytes), countStyle: .file) : nil)
 
@@ -124,8 +126,8 @@ enum StremioStreams {
                 file: file,
                 size: shownSize,
                 sizeBytes: sizeBytes,
-                seeders: Self.capture(#"👤\s*(\d+)"#, in: stats).flatMap(Int.init),
-                provider: (Self.capture(#"⚙️\s*([^💾👤🔎]+)"#, in: stats) ?? Self.capture(#"🔎\s*([^💾👤⚙️]+)"#, in: stats))?.trimmingCharacters(in: .whitespaces),
+                seeders: Pattern.seeders.firstGroup(in: stats).flatMap(Int.init),
+                provider: (Pattern.providerGear.firstGroup(in: stats) ?? Pattern.providerSearch.firstGroup(in: stats))?.trimmingCharacters(in: .whitespaces),
                 languages: afterStats.isEmpty ? nil : afterStats.joined(separator: " "),
                 debridTag: debridTag,
                 cached: cached,
@@ -134,6 +136,10 @@ enum StremioStreams {
                 fileIndex: fileIdx,
                 bingeGroup: behaviorHints?.bingeGroup
             )
+        }
+
+        private static func isStats(_ line: String) -> Bool {
+            line.contains("👤") || line.contains("💾") || line.contains("⚙️") || line.contains("🔎")
         }
 
         private static func isDecoration(_ line: String) -> Bool {
@@ -147,10 +153,11 @@ enum StremioStreams {
                 if token == "4k" { return "4K" }
                 if ["1080p", "720p", "480p"].contains(token) { return token }
             }
-            let lower = haystack.lowercased()
-            if lower.range(of: #"\b(2160p|4k|uhd)\b"#, options: .regularExpression) != nil { return "4K" }
+            // A ".ts" extension is a container, not a telesync.
+            let lower = Pattern.videoExtension.replacing(in: haystack.lowercased(), with: " ")
+            if Pattern.uhd.matches(lower) { return "4K" }
             for value in ["1080p", "720p", "480p"] where lower.contains(value) { return value }
-            if lower.range(of: #"\b(cam|hdcam|ts|telesync)\b"#, options: .regularExpression) != nil { return "CAM" }
+            if Pattern.cam.matches(lower) { return "CAM" }
             return "Other"
         }
 
@@ -158,22 +165,16 @@ enum StremioStreams {
             var tags: [String] = []
             func add(_ tag: String) { if !tags.contains(tag) { tags.append(tag) } }
             let lower = haystack.lowercased()
-            if lower.range(of: #"\b(dv|dovi|dolby[ .]?vision)\b"#, options: .regularExpression) != nil { add("DV") }
-            if lower.range(of: #"hdr10(\+|plus)"#, options: .regularExpression) != nil { add("HDR10+") }
-            else if lower.range(of: #"\bhdr(10)?\b"#, options: .regularExpression) != nil { add("HDR") }
-            if lower.range(of: #"\bhlg\b"#, options: .regularExpression) != nil { add("HLG") }
+            if Pattern.dolbyVision.matches(lower) { add("DV") }
+            if Pattern.hdr10Plus.matches(lower) { add("HDR10+") }
+            else if Pattern.hdr.matches(lower) { add("HDR") }
+            if Pattern.hlg.matches(lower) { add("HLG") }
             if lower.contains("atmos") { add("Atmos") }
-            if lower.range(of: #"\b(remux)\b"#, options: .regularExpression) != nil { add("Remux") }
-            if lower.range(of: #"\b(x265|hevc|h\.?265)\b"#, options: .regularExpression) != nil { add("HEVC") }
-            else if lower.range(of: #"\bav1\b"#, options: .regularExpression) != nil { add("AV1") }
+            if Pattern.remux.matches(lower) { add("Remux") }
+            if Pattern.hevc.matches(lower) { add("HEVC") }
+            else if Pattern.av1.matches(lower) { add("AV1") }
+            if Pattern.threeD.matches(lower) { add("3D") }
             return tags
-        }
-
-        static func capture(_ pattern: String, in text: String) -> String? {
-            guard let regex = try? NSRegularExpression(pattern: pattern),
-                  let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
-                  match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: text) else { return nil }
-            return String(text[range])
         }
 
         static func bytes(_ size: String) -> Double {
@@ -332,8 +333,10 @@ enum SourceFinder {
         }
         if excluded.contains("dolbyvision") && source.hasDolbyVision { return false }
         if excluded.contains("hdrall") && source.hasHDR { return false }
+        if excluded.contains("threed") && source.tags.contains("3D") { return false }
         if config.maxSizeGB > 0, source.sizeBytes > Double(config.maxSizeGB) * 1_073_741_824 { return false }
         if config.cachedOnly && config.hasDebrid && !source.isCached { return false }
+        if config.minSeeders > 0, !source.isCached, let seeders = source.seeders, seeders < config.minSeeders { return false }
         return true
     }
 
@@ -372,4 +375,55 @@ func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () as
         group.cancelAll()
         return first
     }
+}
+
+// MARK: - Patterns
+
+/// The release-name patterns, compiled once: parsing a search runs them hundreds of times.
+enum Pattern {
+    static let videoExtensionAtEnd = make(#"\.(mkv|mp4|avi|m4v|ts|webm)$"#)
+    static let videoExtension = make(#"\.(mkv|mp4|avi|m4v|ts|m2ts|webm)\b"#)
+    static let releaseGroup = make(#"-([A-Za-z0-9]{2,20})(?:\[[^\]]*\])?$"#, caseInsensitive: false)
+    static let size = make(#"💾\s*([\d.,]+\s*[KMGT]?B)"#)
+    static let seeders = make(#"👤\s*(\d+)"#)
+    static let providerGear = make(#"⚙️\s*([^💾👤🔎]+)"#)
+    static let providerSearch = make(#"🔎\s*([^💾👤⚙️]+)"#)
+    static let uhd = make(#"\b(2160p|4k|uhd)\b"#)
+    static let cam = make(#"\b(cam|camrip|hdcam|ts|hdts|tsrip|telesync)\b"#)
+    static let dolbyVision = make(#"\b(dv|dovi|dolby[ .]?vision)\b"#)
+    static let hdr10Plus = make(#"hdr10(\+|plus)"#)
+    static let hdr = make(#"\bhdr(10)?\b"#)
+    static let hlg = make(#"\bhlg\b"#)
+    static let remux = make(#"\bremux\b"#)
+    static let hevc = make(#"\b(x265|hevc|h\.?265)\b"#)
+    static let av1 = make(#"\bav1\b"#)
+    static let threeD = make(#"\b(3d|h-?sbs|half[ .-]?sbs|h-?ou|half[ .-]?ou)\b"#)
+
+    static func make(_ pattern: String, caseInsensitive: Bool = true) -> NSRegularExpression {
+        // The patterns are constants; a typo is a programming error caught by the tests.
+        try! NSRegularExpression(pattern: pattern, options: caseInsensitive ? [.caseInsensitive] : [])
+    }
+}
+
+extension NSRegularExpression {
+    func matches(_ text: String) -> Bool {
+        firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    }
+
+    /// The first capture group of the first match.
+    func firstGroup(in text: String) -> String? {
+        guard let match = firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              match.numberOfRanges > 1, let range = Range(match.range(at: 1), in: text) else { return nil }
+        return String(text[range])
+    }
+
+    func replacing(in text: String, with template: String) -> String {
+        stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: template)
+    }
+}
+
+/// Runs async work and captures its outcome, so two requests can run side by side and each
+/// failure be looked at on its own.
+func asyncResult<T>(_ work: () async throws -> T) async -> Result<T, Error> {
+    do { return .success(try await work()) } catch { return .failure(error) }
 }

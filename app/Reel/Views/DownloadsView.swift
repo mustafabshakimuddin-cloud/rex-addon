@@ -5,6 +5,8 @@ import SwiftUI
 struct DownloadsView: View {
     @EnvironmentObject private var downloads: DownloadStore
     @EnvironmentObject private var library: Library
+    @EnvironmentObject private var playback: PlaybackCenter
+    @EnvironmentObject private var settings: AppSettings
     @State private var filter: Filter = .all
     @State private var confirmCleanup = false
 
@@ -63,7 +65,7 @@ struct DownloadsView: View {
                     Menu {
                         Button { downloads.pauseAll() } label: { Label("Pause All", systemImage: "pause.fill") }
                             .disabled(downloads.active.isEmpty)
-                        Button { downloads.resumeAll() } label: { Label("Resume All", systemImage: "arrow.down") }
+                        Button { (downloads.paused + downloads.problems).forEach { playback.retryDownload($0, settings: settings) } } label: { Label("Resume All", systemImage: "arrow.down") }
                             .disabled(downloads.paused.isEmpty && downloads.problems.isEmpty)
                         Divider()
                         Button(role: .destructive) { confirmCleanup = true } label: {
@@ -207,11 +209,11 @@ struct DownloadRow: View {
                 .buttonStyle(.glass)
                 .accessibilityLabel("Pause")
         case .paused:
-            Button { downloads.resume(item) } label: { Image(systemName: "arrow.down").font(.headline) }
+            Button { playback.retryDownload(item, settings: settings) } label: { Image(systemName: "arrow.down").font(.headline) }
                 .buttonStyle(.glass)
                 .accessibilityLabel("Resume")
         case .failed:
-            Button { downloads.resume(item) } label: { Image(systemName: "arrow.clockwise").font(.headline) }
+            Button { playback.retryDownload(item, settings: settings) } label: { Image(systemName: "arrow.clockwise").font(.headline) }
                 .buttonStyle(.glass)
                 .accessibilityLabel("Retry")
         }
