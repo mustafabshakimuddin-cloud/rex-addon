@@ -406,3 +406,38 @@ Effort: **S** is under half a day, **M** is one to two days, **L** is three days
 4. **Living outside the app**: F28, F31, F32, F34, F36.
 5. **Bigger bets**: F22 discovery, F21 debrid account and cloud, F20 debrid sign-in, F29 iCloud,
    F41 localisation.
+
+---
+
+## Status (25 November 2026)
+
+**Done** on `claude/app-improvements-brainstorm-kyif5y`: every bug, B1–B29, plus one the new tests
+found (a Torrentio provider name swallowed the language flags on the next line); P1–P10 and P12; F1–F11, F14–F17, F21 (plan expiry; the cloud browser is not done), F22 (Trakt trending and
+recommended rows; no TMDB), F23 (ratings; not personal lists), F24, F25, F27, F28, F31, F33, F34,
+F35, F36, F37, F38, F39, F40, F43; T1, T2, T4, T5 (redacted log in Status); the README.
+
+**Changed from the plan**
+
+- **B28** (60-second marks in "Hours watched"): marked entries are now flagged and left out of it.
+- **P1**: done without `@Observable`: positions recorded while the player is open no longer
+  publish, so the screens behind it stay still; derived lists are cached per library revision.
+- **T6** (narrower App Transport Security): kept `NSAllowsArbitraryLoads`, because downloads and
+  self-hosted addons over plain HTTP would stop working. Instead, Status and Stremio Addons warn
+  about an addon whose address isn't encrypted.
+- **T7** (keep the last three releases): not changed. The workflow keeps only the newest build
+  on purpose, so stores that read releases list one version. Release notes now list every commit
+  since the previous build.
+- **F20** (debrid sign-in without a key): not done, as asked. The API key stays the way in.
+
+**Not done**, with why
+
+- **F12** night mode and **F13** stream stats: need AetherEngine APIs that couldn't be checked
+  without a Mac.
+- **F18** addon catalogues, **F19** a second debrid service, **F29** iCloud sync, **F30** custom
+  lists, **F42** profiles: each is a large feature of its own.
+- **F26** cast photos and TMDB recommendations: need a TMDB key setting and client.
+- **F32** widgets and Live Activities: need an app extension and an app group, which sideloading
+  with a free Apple ID makes fragile.
+- **F41** localisation, **T3** Swift 6 and `@Observable`, **T8–T11**: large mechanical changes best
+  done on their own, with a Mac to check them.
+- **P11** image prefetching: small gain.

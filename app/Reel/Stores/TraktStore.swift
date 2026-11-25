@@ -159,6 +159,7 @@ final class TraktStore: ObservableObject {
             syncError = nil
         } catch {
             syncError = Self.describe(error)
+            AppLog.record("Trakt sync", error)
         }
     }
 

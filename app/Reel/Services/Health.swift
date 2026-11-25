@@ -108,6 +108,14 @@ final class HealthModel: ObservableObject {
             lines.append("[\(check.level.label)] \(check.title): \(Redact.text(check.detail))")
             if let advice = check.advice, check.level != .ok { lines.append("       Fix: \(advice)") }
         }
+        let log = AppLog.entries.prefix(20)
+        if !log.isEmpty {
+            lines.append("")
+            lines.append("Recent errors:")
+            for entry in log {
+                lines.append("  \(entry.date.formatted(date: .numeric, time: .standard)) \(entry.area): \(entry.message)")
+            }
+        }
         return lines.joined(separator: "\n")
     }
 

@@ -253,6 +253,7 @@ final class PlaybackCenter: ObservableObject {
             } catch {
                 self.preparing = nil
                 self.errorMessage = PlaybackError.describe(error)
+                AppLog.record("Play \(target.displayTitle)", error)
             }
         }
     }
@@ -280,6 +281,7 @@ final class PlaybackCenter: ObservableObject {
                 throw error
             } catch {
                 memory.noteFailure(candidate, reason: error.localizedDescription)
+                AppLog.record("Resolve \(candidate.releaseGroup ?? candidate.addon)", error)
                 lastError = error
             }
         }
@@ -322,6 +324,7 @@ final class PlaybackCenter: ObservableObject {
         guard !failed.isLocal else { return false }
         forgetResolved(failed.source)
         if !offline { memory.noteFailure(failed.source, reason: reason) }
+        AppLog.record("Player \(failed.target.displayTitle)", reason)
         guard !failed.alternates.isEmpty, !offline else { return false }
         fallbackNotice = "That source didn't open. Trying the next one…"
         let startAt = position.flatMap { $0 > 5 ? $0 : nil } ?? failed.startAt

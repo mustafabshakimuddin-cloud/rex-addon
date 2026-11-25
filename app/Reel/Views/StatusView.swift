@@ -4,6 +4,7 @@ import SwiftUI
 /// OK, WARN, FAIL or Not set, and anything that isn't OK says what to do and links there. Below the
 /// checks: recent alerts, and a report to share when asking for help.
 struct StatusView: View {
+    @State private var log: [AppLog.Entry] = AppLog.entries
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var trakt: TraktStore
     @EnvironmentObject private var downloads: DownloadStore
@@ -37,6 +38,25 @@ struct StatusView: View {
                     if !alerts.recent.isEmpty {
                         Button("Clear") { alerts.clear() }.font(.caption.weight(.semibold)).textCase(nil)
                     }
+                }
+            }
+
+            if !log.isEmpty {
+                Section {
+                    DisclosureGroup("\(log.count) recent errors") {
+                        ForEach(log.prefix(30)) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(entry.area) · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
+                                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.secondaryText)
+                                Text(entry.message).font(.caption).textSelection(.enabled)
+                            }
+                        }
+                        Button("Clear Log", role: .destructive) { AppLog.clear(); log = [] }
+                    }
+                } header: {
+                    Text("Log")
+                } footer: {
+                    Text("Included in the shared report. Keys and tokens are removed before anything is kept.")
                 }
             }
         }

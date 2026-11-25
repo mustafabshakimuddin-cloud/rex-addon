@@ -277,7 +277,10 @@ final class DownloadStore: ObservableObject {
         }
         speeds[id] = nil
         lastPublished[id] = nil
-        if !canResume, let item = items[id] { onEvent?(.failed(item, message)) }
+        if !canResume, let item = items[id] {
+            onEvent?(.failed(item, message))
+            AppLog.record("Download \(item.target.displayTitle)", message)
+        }
     }
 
     fileprivate func finishBackgroundEvents() {

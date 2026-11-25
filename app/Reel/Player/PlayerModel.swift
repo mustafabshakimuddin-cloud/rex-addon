@@ -185,10 +185,12 @@ final class PlayerModel: ObservableObject {
         engine.setNowPlayingInfo(info)
         // The lock screen and Control Center show the title's picture once it has loaded.
         if let artwork {
+            let base = info
             Task {
                 guard let image = await ImageLoader.shared.image(for: artwork, maxPixelSize: 600) else { return }
-                info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                engine.setNowPlayingInfo(info)
+                var withArtwork = base
+                withArtwork[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                engine.setNowPlayingInfo(withArtwork)
             }
         }
 
