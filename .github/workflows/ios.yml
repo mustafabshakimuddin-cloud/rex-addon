@@ -264,8 +264,7 @@ jobs:
               if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
               # The check itself can be slow right after boot; only a list that came back without
               # the app means it isn't running.
-              RUNNING=$(limit 60 xcrun simctl spawn "$UDID" launchctl list 2>/dev/null || echo "CHECK-TIMED-OUT")
-              if [ "$RUNNING" = "CHECK-TIMED-OUT" ]; then
+              if ! RUNNING=$(limit 60 xcrun simctl spawn "$UDID" launchctl list 2>/dev/null); then
                 echo "::warning::$NAME: couldn't check whether the app is running on the $SCREEN screen"
               elif ! printf '%s\n' "$RUNNING" | grep -q community.reel.app; then
                 echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"
