@@ -191,11 +191,11 @@ enum DebridCloud {
     }
 
     private static func jsonObject(_ request: URLRequest) async throws -> [String: Any] {
-        (try JSONSerialization.jsonObject(with: data(request))) as? [String: Any] ?? [:]
+        (try JSONSerialization.jsonObject(with: await data(request))) as? [String: Any] ?? [:]
     }
 
     private static func jsonArray(_ request: URLRequest) async throws -> [[String: Any]] {
-        (try JSONSerialization.jsonObject(with: data(request))) as? [[String: Any]] ?? []
+        (try JSONSerialization.jsonObject(with: await data(request))) as? [[String: Any]] ?? []
     }
 
     private static func encoded(_ text: String) -> String {
