@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// A list of your own beyond My List: "Christmas films", "To watch with Sam".
@@ -11,10 +12,11 @@ struct CustomList: Codable, Identifiable, Hashable {
 
 /// Your own lists, kept in a JSON file like the library.
 @MainActor
-final class ListsStore: ObservableObject {
-    @Published private(set) var lists: [CustomList] = []
+@Observable
+final class ListsStore {
+    private(set) var lists: [CustomList] = []
 
-    private var writer: SnapshotWriter
+    @ObservationIgnored private var writer: SnapshotWriter
 
     init(fileURL: URL = JSONFile.url("lists.json")) {
         writer = SnapshotWriter(url: fileURL)
@@ -87,4 +89,7 @@ final class ListsStore: ObservableObject {
         let snapshot = lists
         writer.flush { try? JSONEncoder().encode(snapshot) }
     }
+
+    /// For tests: wait for queued writes to reach the disk.
+    func waitForSave() { writer.waitUntilWritten() }
 }

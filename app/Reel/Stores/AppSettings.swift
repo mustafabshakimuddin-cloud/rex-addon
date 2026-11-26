@@ -1,62 +1,64 @@
 import Foundation
+import Observation
 import Combine
 import AVFoundation
 import VideoToolbox
 import AetherEngine
 
 @MainActor
-final class AppSettings: ObservableObject {
+@Observable
+final class AppSettings {
     private let defaults = UserDefaults.standard
 
-    @Published var debridService: DebridService { didSet { defaults.set(debridService.rawValue, forKey: Keys.service) } }
-    @Published var debridKey: String { didSet { Keychain.write(debridKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keys.debridKey) } }
+    var debridService: DebridService { didSet { defaults.set(debridService.rawValue, forKey: Keys.service) } }
+    var debridKey: String { didSet { Keychain.write(debridKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keys.debridKey) } }
     /// A second debrid service whose cached releases fill in what the first hasn't got.
-    @Published var secondaryService: DebridService { didSet { defaults.set(secondaryService.rawValue, forKey: Keys.secondaryService) } }
-    @Published var secondaryKey: String { didSet { Keychain.write(secondaryKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keys.secondaryKey) } }
-    @Published var providers: [String] { didSet { defaults.set(providers, forKey: Keys.providers) } }
-    @Published var excludedQualities: [String] { didSet { defaults.set(excludedQualities, forKey: Keys.excluded) } }
-    @Published var sort: TorrentioSort { didSet { defaults.set(sort.rawValue, forKey: Keys.sort) } }
-    @Published var maxSizeGB: Int { didSet { defaults.set(maxSizeGB, forKey: Keys.maxSize) } }
-    @Published var cachedOnly: Bool { didSet { defaults.set(cachedOnly, forKey: Keys.cachedOnly) } }
-    @Published var preferredSubtitleLanguage: String { didSet { defaults.set(preferredSubtitleLanguage, forKey: Keys.subtitleLanguage) } }
+    var secondaryService: DebridService { didSet { defaults.set(secondaryService.rawValue, forKey: Keys.secondaryService) } }
+    var secondaryKey: String { didSet { Keychain.write(secondaryKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keys.secondaryKey) } }
+    var providers: [String] { didSet { defaults.set(providers, forKey: Keys.providers) } }
+    var excludedQualities: [String] { didSet { defaults.set(excludedQualities, forKey: Keys.excluded) } }
+    var sort: TorrentioSort { didSet { defaults.set(sort.rawValue, forKey: Keys.sort) } }
+    var maxSizeGB: Int { didSet { defaults.set(maxSizeGB, forKey: Keys.maxSize) } }
+    var cachedOnly: Bool { didSet { defaults.set(cachedOnly, forKey: Keys.cachedOnly) } }
+    var preferredSubtitleLanguage: String { didSet { defaults.set(preferredSubtitleLanguage, forKey: Keys.subtitleLanguage) } }
     /// ISO 639-2 code; empty keeps each file's default track.
-    @Published var preferredAudioLanguage: String { didSet { defaults.set(preferredAudioLanguage, forKey: Keys.audioLanguage) } }
-    @Published var autoplaySubtitles: Bool { didSet { defaults.set(autoplaySubtitles, forKey: Keys.autoplaySubtitles) } }
-    @Published var autoPlayBest: Bool { didSet { defaults.set(autoPlayBest, forKey: Keys.autoPlayBest) } }
+    var preferredAudioLanguage: String { didSet { defaults.set(preferredAudioLanguage, forKey: Keys.audioLanguage) } }
+    var autoplaySubtitles: Bool { didSet { defaults.set(autoplaySubtitles, forKey: Keys.autoplaySubtitles) } }
+    var autoPlayBest: Bool { didSet { defaults.set(autoPlayBest, forKey: Keys.autoPlayBest) } }
     /// Stremio addons whose streams are merged with Torrentio's.
-    @Published var addons: [StreamAddon] { didSet { defaults.set(try? JSONEncoder().encode(addons), forKey: Keys.addons) } }
+    var addons: [StreamAddon] { didSet { defaults.set(try? JSONEncoder().encode(addons), forKey: Keys.addons) } }
     /// Resolve the likely pick on a title page and fetch its first bytes. Adds that release to the
     /// debrid account before Play is pressed, so it is off unless chosen.
-    @Published var prepareAhead: Bool { didSet { defaults.set(prepareAhead, forKey: Keys.prepareAhead) } }
-    @Published var subtitleScale: Double { didSet { defaults.set(subtitleScale, forKey: Keys.subtitleScale) } }
-    @Published var subtitleStyle: SubtitleStyle { didSet { defaults.set(subtitleStyle.rawValue, forKey: Keys.subtitleStyle) } }
-    @Published var subtitleColor: SubtitleColor { didSet { defaults.set(subtitleColor.rawValue, forKey: Keys.subtitleColor) } }
+    var prepareAhead: Bool { didSet { defaults.set(prepareAhead, forKey: Keys.prepareAhead) } }
+    var subtitleScale: Double { didSet { defaults.set(subtitleScale, forKey: Keys.subtitleScale) } }
+    var subtitleStyle: SubtitleStyle { didSet { defaults.set(subtitleStyle.rawValue, forKey: Keys.subtitleStyle) } }
+    var subtitleColor: SubtitleColor { didSet { defaults.set(subtitleColor.rawValue, forKey: Keys.subtitleColor) } }
     /// How far above the bottom of the picture text subtitles sit, in points beyond the default.
-    @Published var subtitleLift: Double { didSet { defaults.set(subtitleLift, forKey: Keys.subtitleLift) } }
+    var subtitleLift: Double { didSet { defaults.set(subtitleLift, forKey: Keys.subtitleLift) } }
     /// How dark the box is behind text subtitles in the "Dark box" style.
-    @Published var subtitleBoxOpacity: Double { didSet { defaults.set(subtitleBoxOpacity, forKey: Keys.subtitleBoxOpacity) } }
+    var subtitleBoxOpacity: Double { didSet { defaults.set(subtitleBoxOpacity, forKey: Keys.subtitleBoxOpacity) } }
     /// Grow subtitles with the system text size.
-    @Published var subtitleFollowsTextSize: Bool { didSet { defaults.set(subtitleFollowsTextSize, forKey: Keys.subtitleDynamicType) } }
+    var subtitleFollowsTextSize: Bool { didSet { defaults.set(subtitleFollowsTextSize, forKey: Keys.subtitleDynamicType) } }
 
     var subtitleAppearance: SubtitleAppearance {
         SubtitleAppearance(scale: subtitleScale, style: subtitleStyle, color: subtitleColor, lift: subtitleLift,
                            boxOpacity: subtitleBoxOpacity, followsTextSize: subtitleFollowsTextSize)
     }
     /// Search OpenSubtitles when a file has no subtitles in the preferred language.
-    @Published var searchOnlineSubtitles: Bool { didSet { defaults.set(searchOnlineSubtitles, forKey: Keys.onlineSubtitles) } }
+    var searchOnlineSubtitles: Bool { didSet { defaults.set(searchOnlineSubtitles, forKey: Keys.onlineSubtitles) } }
     /// Show Skip Intro / Skip Credits when the file's chapters name them.
-    @Published var showSkipButtons: Bool { didSet { defaults.set(showSkipButtons, forKey: Keys.skipButtons) } }
+    var showSkipButtons: Bool { didSet { defaults.set(showSkipButtons, forKey: Keys.skipButtons) } }
     /// Offer the next episode near the end of one, and start it after a countdown.
-    @Published var autoPlayNext: Bool { didSet { defaults.set(autoPlayNext, forKey: Keys.autoPlayNext) } }
+    var autoPlayNext: Bool { didSet { defaults.set(autoPlayNext, forKey: Keys.autoPlayNext) } }
     /// Skip intros and recaps without a tap, when the file's chapters name them.
-    @Published var autoSkipIntro: Bool { didSet { defaults.set(autoSkipIntro, forKey: Keys.autoSkipIntro) } }
-    @Published var autoSkipRecap: Bool { didSet { defaults.set(autoSkipRecap, forKey: Keys.autoSkipRecap) } }
+    var autoSkipIntro: Bool { didSet { defaults.set(autoSkipIntro, forKey: Keys.autoSkipIntro) } }
+    var autoSkipRecap: Bool { didSet { defaults.set(autoSkipRecap, forKey: Keys.autoSkipRecap) } }
     /// Night mode: loud scenes come down and quiet ones up, for late evenings and thin walls.
-    @Published var nightMode: Bool { didSet { defaults.set(nightMode, forKey: Keys.nightMode) } }
+    var nightMode: Bool { didSet { defaults.set(nightMode, forKey: Keys.nightMode) } }
     /// Extra level on the dialogue, in dB (0 is off).
-    @Published var dialogueBoostDB: Double { didSet { defaults.set(dialogueBoostDB, forKey: Keys.dialogueBoost) } }
+    var dialogueBoostDB: Double { didSet { defaults.set(dialogueBoostDB, forKey: Keys.dialogueBoost) } }
     /// Raise sources mixed quietly to a common loudness.
-    @Published var liftQuietSources: Bool { didSet { defaults.set(liftQuietSources, forKey: Keys.liftQuiet) } }
+    var liftQuietSources: Bool { didSet { defaults.set(liftQuietSources, forKey: Keys.liftQuiet) } }
 
     /// The engine's audio shaping for these settings; inactive when all are off.
     var audioShaping: AudioShaping {
@@ -65,62 +67,62 @@ final class AppSettings: ObservableObject {
     }
 
     // MARK: Torrentio
-    @Published var torrentioServer: String { didSet { defaults.set(torrentioServer, forKey: Keys.torrentioServer) } }
+    var torrentioServer: String { didSet { defaults.set(torrentioServer, forKey: Keys.torrentioServer) } }
     /// Torrentio's language names ("french"), listed first in its results.
-    @Published var priorityLanguages: [String] { didSet { defaults.set(priorityLanguages, forKey: Keys.priorityLanguages) } }
-    @Published var perQualityLimit: Int { didSet { defaults.set(perQualityLimit, forKey: Keys.perQualityLimit) } }
-    @Published var minSeeders: Int { didSet { defaults.set(minSeeders, forKey: Keys.minSeeders) } }
+    var priorityLanguages: [String] { didSet { defaults.set(priorityLanguages, forKey: Keys.priorityLanguages) } }
+    var perQualityLimit: Int { didSet { defaults.set(perQualityLimit, forKey: Keys.perQualityLimit) } }
+    var minSeeders: Int { didSet { defaults.set(minSeeders, forKey: Keys.minSeeders) } }
 
     // MARK: Source preferences
-    @Published var preferHDR: Leaning { didSet { defaults.set(preferHDR.rawValue, forKey: Keys.preferHDR) } }
-    @Published var preferDolbyVision: Leaning { didSet { defaults.set(preferDolbyVision.rawValue, forKey: Keys.preferDV) } }
-    @Published var preferAtmos: Leaning { didSet { defaults.set(preferAtmos.rawValue, forKey: Keys.preferAtmos) } }
-    @Published var preferRemux: Leaning { didSet { defaults.set(preferRemux.rawValue, forKey: Keys.preferRemux) } }
-    @Published var preferredGroups: [String] { didSet { defaults.set(preferredGroups, forKey: Keys.preferredGroups) } }
+    var preferHDR: Leaning { didSet { defaults.set(preferHDR.rawValue, forKey: Keys.preferHDR) } }
+    var preferDolbyVision: Leaning { didSet { defaults.set(preferDolbyVision.rawValue, forKey: Keys.preferDV) } }
+    var preferAtmos: Leaning { didSet { defaults.set(preferAtmos.rawValue, forKey: Keys.preferAtmos) } }
+    var preferRemux: Leaning { didSet { defaults.set(preferRemux.rawValue, forKey: Keys.preferRemux) } }
+    var preferredGroups: [String] { didSet { defaults.set(preferredGroups, forKey: Keys.preferredGroups) } }
     /// Favour releases that carry the preferred audio language.
-    @Published var preferAudioLanguageReleases: Bool { didSet { defaults.set(preferAudioLanguageReleases, forKey: Keys.preferAudioReleases) } }
-    @Published var matchDevice: Bool { didSet { defaults.set(matchDevice, forKey: Keys.matchDevice) } }
+    var preferAudioLanguageReleases: Bool { didSet { defaults.set(preferAudioLanguageReleases, forKey: Keys.preferAudioReleases) } }
+    var matchDevice: Bool { didSet { defaults.set(matchDevice, forKey: Keys.matchDevice) } }
 
     // MARK: Debrid account
     /// What the service said about the account at the last check: plan end, user name.
-    @Published var debridAccount: DebridAccountInfo? {
+    var debridAccount: DebridAccountInfo? {
         didSet { defaults.set(try? JSONEncoder().encode(debridAccount), forKey: Keys.debridAccount) }
     }
 
     // MARK: Offline copies
-    @Published var downloadsOverCellular: Bool { didSet { defaults.set(downloadsOverCellular, forKey: Keys.downloadsCellular) } }
+    var downloadsOverCellular: Bool { didSet { defaults.set(downloadsOverCellular, forKey: Keys.downloadsCellular) } }
     /// The largest release a download picks, in GB; 0 follows the streaming limit.
-    @Published var downloadMaxSizeGB: Int { didSet { defaults.set(downloadMaxSizeGB, forKey: Keys.downloadMaxSize) } }
+    var downloadMaxSizeGB: Int { didSet { defaults.set(downloadMaxSizeGB, forKey: Keys.downloadMaxSize) } }
     /// Delete finished downloads this many days after they were watched; 0 keeps them.
-    @Published var deleteWatchedDownloadsAfterDays: Int { didSet { defaults.set(deleteWatchedDownloadsAfterDays, forKey: Keys.deleteWatchedAfter) } }
+    var deleteWatchedDownloadsAfterDays: Int { didSet { defaults.set(deleteWatchedDownloadsAfterDays, forKey: Keys.deleteWatchedAfter) } }
     /// Save the preferred-language subtitles from OpenSubtitles with each download.
-    @Published var downloadSubtitles: Bool { didSet { defaults.set(downloadSubtitles, forKey: Keys.downloadSubtitles) } }
+    var downloadSubtitles: Bool { didSet { defaults.set(downloadSubtitles, forKey: Keys.downloadSubtitles) } }
 
     // MARK: Notifications
-    @Published var notifyNewEpisodes: Bool { didSet { defaults.set(notifyNewEpisodes, forKey: Keys.notifyEpisodes) } }
-    @Published var notifyDownloads: Bool { didSet { defaults.set(notifyDownloads, forKey: Keys.notifyDownloads) } }
+    var notifyNewEpisodes: Bool { didSet { defaults.set(notifyNewEpisodes, forKey: Keys.notifyEpisodes) } }
+    var notifyDownloads: Bool { didSet { defaults.set(notifyDownloads, forKey: Keys.notifyDownloads) } }
 
     // MARK: Browsing
     /// Leave watched films out of Explore and catalogue rows.
-    @Published var hideWatched: Bool { didSet { defaults.set(hideWatched, forKey: Keys.hideWatched) } }
+    var hideWatched: Bool { didSet { defaults.set(hideWatched, forKey: Keys.hideWatched) } }
 
     // MARK: Appearance
-    @Published var accent: AccentChoice {
+    var accent: AccentChoice {
         didSet { Theme.choice = accent; defaults.set(accent.rawValue, forKey: Keys.accent) }
     }
-    @Published var posterSize: PosterSize { didSet { defaults.set(posterSize.rawValue, forKey: Keys.posterSize) } }
-    @Published var showRatings: Bool { didSet { defaults.set(showRatings, forKey: Keys.showRatings) } }
-    @Published var heroAutoAdvance: Bool { didSet { defaults.set(heroAutoAdvance, forKey: Keys.heroAutoAdvance) } }
+    var posterSize: PosterSize { didSet { defaults.set(posterSize.rawValue, forKey: Keys.posterSize) } }
+    var showRatings: Bool { didSet { defaults.set(showRatings, forKey: Keys.showRatings) } }
+    var heroAutoAdvance: Bool { didSet { defaults.set(heroAutoAdvance, forKey: Keys.heroAutoAdvance) } }
 
     // MARK: Home screen
     /// Every Home section in the order chosen, shown or not.
-    @Published var homeOrder: [HomeSection] { didSet { defaults.set(homeOrder.map(\.rawValue), forKey: Keys.homeOrder) } }
-    @Published var homeHidden: Set<HomeSection> { didSet { defaults.set(homeHidden.map(\.rawValue), forKey: Keys.homeHidden) } }
+    var homeOrder: [HomeSection] { didSet { defaults.set(homeOrder.map(\.rawValue), forKey: Keys.homeOrder) } }
+    var homeHidden: Set<HomeSection> { didSet { defaults.set(homeHidden.map(\.rawValue), forKey: Keys.homeHidden) } }
 
     // MARK: Setup and search
     /// Set once the first-run setup has been finished or skipped; Settings can open it again.
-    @Published var setupFinished: Bool { didSet { defaults.set(setupFinished, forKey: Keys.setupFinished) } }
-    @Published private(set) var recentSearches: [String] { didSet { defaults.set(recentSearches, forKey: Keys.recentSearches) } }
+    var setupFinished: Bool { didSet { defaults.set(setupFinished, forKey: Keys.setupFinished) } }
+    private(set) var recentSearches: [String] { didSet { defaults.set(recentSearches, forKey: Keys.recentSearches) } }
 
     init() {
         debridService = DebridService(rawValue: defaults.string(forKey: Keys.service) ?? "") ?? .none

@@ -1,11 +1,12 @@
 import SwiftUI
 
 @MainActor
-final class HomeModel: ObservableObject {
-    @Published private(set) var rows: [HomeSection: [MediaItem]] = [:]
-    @Published private(set) var hero: [MediaItem] = []
-    @Published var error: String?
-    @Published private(set) var isLoading = false
+@Observable
+final class HomeModel {
+    private(set) var rows: [HomeSection: [MediaItem]] = [:]
+    private(set) var hero: [MediaItem] = []
+    var error: String?
+    private(set) var isLoading = false
 
     /// Fetches the catalogue rows Home shows that aren't loaded yet. The featured carousel draws
     /// on the popular rows, so those load whenever it is shown, even when their own rows are hidden.
@@ -56,17 +57,17 @@ final class HomeModel: ObservableObject {
 }
 
 struct HomeView: View {
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var trakt: TraktStore
-    @EnvironmentObject private var alerts: AlertCenter
-    @EnvironmentObject private var upcoming: UpcomingStore
+    @Environment(Library.self) private var library
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppRouter.self) private var router
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(TraktStore.self) private var trakt
+    @Environment(AlertCenter.self) private var alerts
+    @Environment(UpcomingStore.self) private var upcoming
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
-    @StateObject private var model = HomeModel()
+    @State private var model = HomeModel()
     @State private var width: CGFloat = 390
     @State private var height: CGFloat = 844
 
@@ -216,9 +217,9 @@ struct HomeView: View {
 /// The long-press menu shared by poster cards: list, watched, details.
 struct TitleContextMenu: View {
     let item: MediaItem
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(Library.self) private var library
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
         Button {
@@ -246,9 +247,9 @@ struct HeroCarousel: View {
     let width: CGFloat
     /// The outer display of iPhone Duo is short (678 pt); a poster-shaped hero would fill it.
     var maxHeight: CGFloat = .infinity
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var playback: PlaybackCenter
+    @Environment(Library.self) private var library
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlaybackCenter.self) private var playback
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: String?

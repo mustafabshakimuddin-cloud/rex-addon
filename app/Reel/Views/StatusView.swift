@@ -5,14 +5,14 @@ import SwiftUI
 /// checks: recent alerts, and a report to share when asking for help.
 struct StatusView: View {
     @State private var log: [AppLog.Entry] = AppLog.entries
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var trakt: TraktStore
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var memory: SourceMemory
-    @EnvironmentObject private var alerts: AlertCenter
-    @EnvironmentObject private var router: AppRouter
+    @Environment(AppSettings.self) private var settings
+    @Environment(TraktStore.self) private var trakt
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(SourceMemory.self) private var memory
+    @Environment(AlertCenter.self) private var alerts
+    @Environment(AppRouter.self) private var router
     @Environment(\.openURL) private var openURL
-    @StateObject private var health = HealthModel()
+    @State private var health = HealthModel()
 
     var body: some View {
         List {
@@ -124,19 +124,19 @@ struct StatusView: View {
                 Image(systemName: check.systemImage)
                     .foregroundStyle(Theme.secondaryText)
                     .frame(width: 24)
-                Text(check.title).font(.body.weight(.semibold))
+                Text(check.title.localized).font(.body.weight(.semibold))
                 Spacer()
                 if pending {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text(check.level.label)
+                    Text(check.level.label.localized)
                         .font(.caption2.weight(.heavy))
                         .foregroundStyle(tint(check.level))
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(tint(check.level).opacity(0.16), in: Capsule())
                 }
             }
-            Text(check.detail).font(.subheadline).foregroundStyle(pending ? Theme.secondaryText : .white.opacity(0.88))
+            Text(check.detail.localized).font(.subheadline).foregroundStyle(pending ? Theme.secondaryText : .white.opacity(0.88))
             if let advice = check.advice, check.level != .ok, !pending {
                 Label(advice, systemImage: "lightbulb").font(.caption).foregroundStyle(Theme.secondaryText)
             }

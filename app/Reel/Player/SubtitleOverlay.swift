@@ -4,7 +4,7 @@ import AetherEngine
 /// Draws the engine's subtitle cues. AetherEngine decodes every format (SRT, ASS, WebVTT, PGS, DVB)
 /// into cues and leaves drawing to the host, timed against `clock.sourceTime`.
 struct SubtitleOverlay: View {
-    @ObservedObject var feed: SubtitleFeed
+    var feed: SubtitleFeed
     /// Lift text above the controls while they are showing.
     var bottomInset: CGFloat
     var appearance = SubtitleAppearance()

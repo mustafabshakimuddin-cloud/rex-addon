@@ -3,10 +3,10 @@ import SwiftUI
 /// Every download in one live list: a summary of what's moving and how much room is left, then
 /// each title with its progress, speed and the controls its state allows.
 struct DownloadsView: View {
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(Library.self) private var library
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppSettings.self) private var settings
     @State private var filter: Filter = .all
     @State private var confirmCleanup = false
 
@@ -97,7 +97,7 @@ struct DownloadsView: View {
 
 /// What's moving, how fast, and how much room is left.
 struct DownloadsSummary: View {
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(DownloadStore.self) private var downloads
 
     var body: some View {
         let active = downloads.active
@@ -157,10 +157,10 @@ struct DownloadsSummary: View {
 /// One download: picture, title, quality, progress and its control.
 struct DownloadRow: View {
     let item: DownloadItem
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var library: Library
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppSettings.self) private var settings
+    @Environment(Library.self) private var library
 
     var body: some View {
         HStack(spacing: 14) {

@@ -29,7 +29,7 @@ actor TMDB {
         if let cached = people[cacheKey], !details || cached?.biography != nil { return cached }
         guard Self.isConfigured,
               let search = try? await Self.get("search/person", query: ["query": name, "include_adult": "false"]),
-              let results = search["results"] as? [[String: Any]],
+              let results = Self.object(search)["results"] as? [[String: Any]],
               let best = results.first(where: { ($0["name"] as? String)?.caseInsensitiveCompare(name) == .orderedSame }) ?? results.first,
               let id = best["id"] as? Int else {
             people[cacheKey] = .some(nil)
@@ -38,7 +38,8 @@ actor TMDB {
         var person = Person(id: id, name: best["name"] as? String ?? name,
                             photo: (best["profile_path"] as? String).flatMap { URL(string: "https://image.tmdb.org/t/p/w342\($0)") },
                             department: best["known_for_department"] as? String)
-        if details, let info = try? await Self.get("person/\(id)", query: [:]) {
+        if details, let data = try? await Self.get("person/\(id)", query: [:]) {
+            let info = Self.object(data)
             person.biography = (info["biography"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             person.birthday = info["birthday"] as? String
             person.birthplace = info["place_of_birth"] as? String
@@ -52,8 +53,12 @@ actor TMDB {
         (try? await get("configuration", query: [:], key: key)) != nil
     }
 
+    private static func object(_ data: Data) -> [String: Any] {
+        (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
     /// A v3 API key goes in the query; a v4 read access token (a long JWT) as a bearer token.
-    private static func get(_ path: String, query: [String: String], key: String = TMDB.key) async throws -> [String: Any] {
+    private static func get(_ path: String, query: [String: String], key: String = TMDB.key) async throws -> Data {
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         var components = URLComponents(string: "https://api.themoviedb.org/3/\(path)")!
         var items = query.map { URLQueryItem(name: $0.key, value: $0.value) }
@@ -65,6 +70,6 @@ actor TMDB {
         let (data, response) = try await HTTP.session.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else { throw HTTPError.status(status, components.url!) }
-        return (try JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        return data
     }
 }

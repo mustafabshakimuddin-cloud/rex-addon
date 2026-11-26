@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// One episode on the calendar.
@@ -15,14 +16,15 @@ struct CalendarEpisode: Identifiable, Hashable {
 /// New and upcoming episodes of the series you follow: those in My List and those you have watched
 /// lately. One Cinemeta request covers them all, and the answer is reused for half an hour.
 @MainActor
-final class UpcomingStore: ObservableObject {
-    @Published private(set) var episodes: [CalendarEpisode] = [] { didSet { newCache = nil } }
+@Observable
+final class UpcomingStore {
+    private(set) var episodes: [CalendarEpisode] = [] { didSet { newCache = nil } }
     /// New episodes by series, for one library revision: Home and the badge ask several times
     /// per redraw.
-    private var newCache: (revision: Int, value: [String: [CalendarEpisode]])?
-    @Published private(set) var isLoading = false
-    @Published private(set) var error: String?
-    @Published private(set) var loadedAt: Date?
+    @ObservationIgnored private var newCache: (revision: Int, value: [String: [CalendarEpisode]])?
+    private(set) var isLoading = false
+    private(set) var error: String?
+    private(set) var loadedAt: Date?
 
     private var loadedFor: [String] = []
     private static let lifetime: TimeInterval = 30 * 60

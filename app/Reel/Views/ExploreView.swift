@@ -1,10 +1,11 @@
 import SwiftUI
 
 @MainActor
-final class BrowseModel: ObservableObject {
-    @Published var items: [MediaItem] = []
-    @Published var isLoading = false
-    @Published var error: String?
+@Observable
+final class BrowseModel {
+    var items: [MediaItem] = []
+    var isLoading = false
+    var error: String?
     private var page = 0
     private var exhausted = false
     private var key = ""
@@ -70,15 +71,15 @@ enum ExploreLayout: String, CaseIterable, Identifiable {
 /// Films and series in one place. Rows shows a shelf per list and genre to scroll through; Grid
 /// shows one list at a time with its filters, loading more as you go.
 struct ExploreView: View {
-    @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppRouter.self) private var router
+    @Environment(AppSettings.self) private var settings
     @AppStorage("explore.layout") private var layout: ExploreLayout = .rows
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Picker("Type", selection: $router.exploreKind) {
-                    ForEach(MediaKind.allCases) { Text($0.title).tag($0) }
+                Picker("Type", selection: Bindable(router).exploreKind) {
+                    ForEach(MediaKind.allCases) { Text($0.title.localized).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 360)
@@ -100,7 +101,7 @@ struct ExploreView: View {
                     Picker("Layout", selection: $layout) {
                         ForEach(ExploreLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                     }
-                    Toggle(isOn: $settings.hideWatched) { Label("Hide Watched Films", systemImage: "eye.slash") }
+                    Toggle(isOn: Bindable(settings).hideWatched) { Label("Hide Watched Films", systemImage: "eye.slash") }
                 } label: {
                     Label("Layout", systemImage: layout.systemImage)
                 }
@@ -132,7 +133,7 @@ private struct ExploreRows: View {
             + Cinemeta.genres(for: kind).map { Shelf(title: $0, catalog: .popular, genre: $0) }
     }
 
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
 
     /// Catalogues from the addons you've added, for this kind of title.
     private struct AddonShelfKey: Identifiable {
@@ -163,9 +164,9 @@ private struct ExploreRows: View {
 struct AddonShelf: View {
     let addon: StreamAddon
     let catalog: AddonCatalog
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(AppSettings.self) private var settings
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @State private var loaded: [MediaItem] = []
@@ -199,8 +200,8 @@ struct AddonShelf: View {
 struct AddonCatalogGrid: View {
     let addon: StreamAddon
     let catalog: AddonCatalog
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @State private var items: [MediaItem] = []
@@ -249,9 +250,9 @@ struct LazyShelf: View {
     let kind: MediaKind
     let catalog: Cinemeta.Catalog
     let genre: String?
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(AppSettings.self) private var settings
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @State private var loaded: [MediaItem] = []
@@ -321,7 +322,7 @@ private struct ExploreGrid: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Picker("List", selection: $catalog) {
-                ForEach(Cinemeta.Catalog.allCases) { Text($0.title).tag($0) }
+                ForEach(Cinemeta.Catalog.allCases) { Text($0.title.localized).tag($0) }
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 360)
@@ -344,7 +345,7 @@ private struct ExploreGrid: View {
             }
 
             Picker("Order", selection: $order) {
-                ForEach(GridOrder.allCases) { Text($0.title).tag($0) }
+                ForEach(GridOrder.allCases) { Text($0.title.localized).tag($0) }
             }
             .pickerStyle(.menu)
             .padding(.horizontal, 14)
@@ -357,7 +358,7 @@ private struct ExploreGrid: View {
         Button {
             withAnimation(.snappy) { action() }
         } label: {
-            Text(title).font(.subheadline.weight(.semibold)).padding(.horizontal, 6)
+            Text(title.localized).font(.subheadline.weight(.semibold)).padding(.horizontal, 6)
         }
         .buttonStyle(.glass)
         .tint(selected ? Theme.accent : nil)
@@ -371,12 +372,12 @@ struct CatalogGrid: View {
     let catalog: Cinemeta.Catalog
     let genre: String?
     var order: GridOrder = .list
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(AppSettings.self) private var settings
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
-    @StateObject private var model = BrowseModel()
+    @State private var model = BrowseModel()
 
     var body: some View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)

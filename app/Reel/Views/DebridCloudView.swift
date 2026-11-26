@@ -3,7 +3,7 @@ import SwiftUI
 /// Everything already in the debrid account, newest first: open one to see its video files, tap a
 /// file to play it. Nothing here adds to the account.
 struct DebridCloudView: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
     @State private var entries: [DebridCloud.Entry] = []
     @State private var loading = true
     @State private var error: String?
@@ -71,8 +71,8 @@ struct DebridCloudView: View {
 /// The video files of one release in the account.
 private struct DebridCloudFilesView: View {
     let entry: DebridCloud.Entry
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var playback: PlaybackCenter
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlaybackCenter.self) private var playback
     @State private var files: [DebridCloud.File] = []
     @State private var loading = true
     @State private var error: String?

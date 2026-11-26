@@ -1,14 +1,15 @@
 import SwiftUI
 
 @MainActor
-final class SourcesModel: ObservableObject {
-    @Published var sources: [StreamSource] = [] { didSet { ranked = nil } }
-    @Published var isLoading = true
-    @Published var error: String?
-    @Published var verifying: Set<String> = []
-    @Published var verifyErrors: [String: String] = [:]
+@Observable
+final class SourcesModel {
+    var sources: [StreamSource] = [] { didSet { ranked = nil } }
+    var isLoading = true
+    var error: String?
+    var verifying: Set<String> = []
+    var verifyErrors: [String: String] = [:]
     /// Playable sources in Play's order, worked out once per list rather than on every redraw.
-    private(set) var ranked: [StreamSource]?
+    @ObservationIgnored private(set) var ranked: [StreamSource]?
 
     func load(_ target: PlaybackTarget, playback: PlaybackCenter, query: SourceQuery, refresh: Bool = false) async {
         if !refresh, let cached = playback.cachedSources(for: target, query: query) {
@@ -54,13 +55,13 @@ final class SourcesModel: ObservableObject {
 /// about it, and what the file really contains once checked.
 struct SourcesSheet: View {
     let target: PlaybackTarget
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var memory: SourceMemory
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(AppSettings.self) private var settings
+    @Environment(Library.self) private var library
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(SourceMemory.self) private var memory
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var model = SourcesModel()
+    @State private var model = SourcesModel()
     @State private var quality = "All"
     @State private var order: Order = .best
     @State private var text = ""

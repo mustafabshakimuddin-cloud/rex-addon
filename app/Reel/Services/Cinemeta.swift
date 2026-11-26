@@ -307,14 +307,15 @@ private struct RawVideo: Decodable {
 }
 
 enum DateParsing {
-    private static let iso: ISO8601DateFormatter = {
+    // ISO8601DateFormatter is documented as thread-safe once configured.
+    nonisolated(unsafe) private static let iso: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
-    private static let isoPlain = ISO8601DateFormatter()
+    nonisolated(unsafe) private static let isoPlain = ISO8601DateFormatter()
 
-    private static let day: DateFormatter = {
+    nonisolated(unsafe) private static let day: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = TimeZone(identifier: "UTC")

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// What happened the times a file, a release group or an addon was played.
@@ -39,9 +40,10 @@ struct SourceVerification: Codable, Hashable {
 /// worked. Three levels, from most to least specific: the exact file, the release group that
 /// made it, and the addon that listed it. Kept in a small JSON file.
 @MainActor
-final class SourceMemory: ObservableObject {
-    @Published private(set) var records: [String: SourceRecord] = [:]
-    @Published private(set) var verified: [String: SourceVerification] = [:]
+@Observable
+final class SourceMemory {
+    private(set) var records: [String: SourceRecord] = [:]
+    private(set) var verified: [String: SourceVerification] = [:]
 
     private let writer: SnapshotWriter
     private static let maximumRecords = 3000

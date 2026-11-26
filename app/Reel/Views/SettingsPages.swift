@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// Stremio addons whose streams are merged with Torrentio's.
 struct AddonsView: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
     @State private var address = ""
     @State private var adding = false
     @State private var error: String?
@@ -36,7 +36,7 @@ struct AddonsView: View {
                 if settings.addons.isEmpty {
                     Text("None yet. Torrentio is always on.").foregroundStyle(Theme.secondaryText)
                 }
-                ForEach($settings.addons) { $addon in
+                ForEach(Bindable(settings).addons) { $addon in
                     Toggle(isOn: $addon.enabled) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(addon.name)
@@ -85,7 +85,7 @@ struct AddonsView: View {
 
 /// Connects a Trakt account with the device flow.
 struct TraktSettingsView: View {
-    @EnvironmentObject private var trakt: TraktStore
+    @Environment(TraktStore.self) private var trakt
     @Environment(\.openURL) private var openURL
     @State private var clientID = ""
     @State private var clientSecret = ""
@@ -180,7 +180,7 @@ struct TraktSettingsView: View {
 
 /// Accent colour, poster size and the small things that change how the app looks.
 struct AppearanceView: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
 
     private let sample = MediaItem(
         id: "tt0111161", kind: .movie, name: "The Shawshank Redemption",
@@ -205,7 +205,7 @@ struct AppearanceView: View {
                                         }
                                     }
                                     .overlay(Circle().strokeBorder(.white.opacity(settings.accent == choice ? 0.9 : 0.15), lineWidth: 2))
-                                Text(choice.title).font(.caption).foregroundStyle(settings.accent == choice ? .white : Theme.secondaryText)
+                                Text(choice.title.localized).font(.caption).foregroundStyle(settings.accent == choice ? .white : Theme.secondaryText)
                             }
                         }
                         .buttonStyle(.plain)
@@ -219,8 +219,8 @@ struct AppearanceView: View {
             }
 
             Section {
-                Picker("Poster size", selection: $settings.posterSize) {
-                    ForEach(PosterSize.allCases) { Text($0.title).tag($0) }
+                Picker("Poster size", selection: Bindable(settings).posterSize) {
+                    ForEach(PosterSize.allCases) { Text($0.title.localized).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 HStack {
@@ -231,7 +231,7 @@ struct AppearanceView: View {
                     Spacer()
                 }
                 .padding(.vertical, 6)
-                Toggle("Show ratings on posters", isOn: $settings.showRatings)
+                Toggle("Show ratings on posters", isOn: Bindable(settings).showRatings)
             } header: {
                 Text("Posters")
             } footer: {
@@ -239,7 +239,7 @@ struct AppearanceView: View {
             }
 
             Section {
-                Toggle("Move the featured row by itself", isOn: $settings.heroAutoAdvance)
+                Toggle("Move the featured row by itself", isOn: Bindable(settings).heroAutoAdvance)
             } header: {
                 Text("Home")
             } footer: {
@@ -254,7 +254,7 @@ struct AppearanceView: View {
 
 /// Which sections Home shows, in what order.
 struct HomeLayoutView: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
     @State private var confirmReset = false
 
     var body: some View {
@@ -294,23 +294,23 @@ struct HomeLayoutView: View {
 
 /// How offline copies are made and kept.
 struct OfflineSettingsView: View {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var router: AppRouter
+    @Environment(AppSettings.self) private var settings
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         Form {
             Section {
-                Toggle("Download over cellular", isOn: $settings.downloadsOverCellular)
-                Picker("Largest download", selection: $settings.downloadMaxSizeGB) {
+                Toggle("Download over cellular", isOn: Bindable(settings).downloadsOverCellular)
+                Picker("Largest download", selection: Bindable(settings).downloadMaxSizeGB) {
                     Text("Same as streaming").tag(0)
                     ForEach([2, 4, 8, 15, 30], id: \.self) { Text("\($0) GB").tag($0) }
                 }
-                Toggle("Save subtitles with downloads", isOn: $settings.downloadSubtitles)
+                Toggle("Save subtitles with downloads", isOn: Bindable(settings).downloadSubtitles)
             } footer: {
                 Text("Downloads pick the release Play would, within this size. Subtitles in your subtitle language come from OpenSubtitles and play offline too.")
             }
             Section {
-                Picker("Delete after watching", selection: $settings.deleteWatchedDownloadsAfterDays) {
+                Picker("Delete after watching", selection: Bindable(settings).deleteWatchedDownloadsAfterDays) {
                     Text("Never").tag(0)
                     ForEach([1, 3, 7, 14, 30], id: \.self) { Text($0 == 1 ? "After a day" : "After \($0) days").tag($0) }
                 }
@@ -330,9 +330,9 @@ struct OfflineSettingsView: View {
 /// A file with My List, history, source memory and settings, to restore after a reinstall. Keys
 /// and Trakt's sign-in stay in the Keychain and are never written to it.
 struct BackupView: View {
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var memory: SourceMemory
-    @EnvironmentObject private var lists: ListsStore
+    @Environment(Library.self) private var library
+    @Environment(SourceMemory.self) private var memory
+    @Environment(ListsStore.self) private var lists
     @State private var exportURL: URL?
     @State private var importing = false
     @State private var message: String?

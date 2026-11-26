@@ -219,7 +219,7 @@ struct StatusPill: View {
     var body: some View {
         HStack(spacing: 4) {
             if let systemImage { Image(systemName: systemImage) }
-            Text(text)
+            Text(text.localized)
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(tint)
@@ -248,9 +248,9 @@ struct SectionHeader<Destination: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.title3.weight(.bold))
+                Text(title.localized).font(.title3.weight(.bold))
                 if let subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(Theme.secondaryText)
+                    Text(subtitle.localized).font(.caption).foregroundStyle(Theme.secondaryText)
                 }
             }
             Spacer()
@@ -367,7 +367,7 @@ struct Chip: View {
     var body: some View {
         HStack(spacing: 4) {
             if let systemImage { Image(systemName: systemImage) }
-            Text(text)
+            Text(text.localized)
         }
         .font(.caption.weight(.semibold))
         .padding(.horizontal, 10).padding(.vertical, 5)
@@ -386,6 +386,13 @@ struct QualityBadge: View {
     }
 }
 
+extension String {
+    /// The text in the reader's language when the String Catalog has it, otherwise as it is.
+    /// For labels that arrive as plain Strings (section titles, enum titles), which SwiftUI
+    /// doesn't look up by itself. Titles of films and names of people pass through untouched.
+    var localized: String { Bundle.main.localizedString(forKey: self, value: self, table: nil) }
+}
+
 struct StateMessage: View {
     let title: String
     let message: String
@@ -395,12 +402,12 @@ struct StateMessage: View {
 
     var body: some View {
         ContentUnavailableView {
-            Label(title, systemImage: systemImage)
+            Label(title.localized, systemImage: systemImage)
         } description: {
-            Text(message)
+            Text(message.localized)
         } actions: {
             if let actionTitle, let action {
-                Button(actionTitle, action: action).buttonStyle(.glassProminent)
+                Button(actionTitle.localized, action: action).buttonStyle(.glassProminent)
             }
         }
     }
@@ -416,7 +423,7 @@ extension View {
 /// Scrolls a tab's first screen back to the top when its tab is chosen again.
 private struct ScrollToTopOnRetap: ViewModifier {
     let tab: AppTab
-    @EnvironmentObject private var router: AppRouter
+    @Environment(AppRouter.self) private var router
     @State private var position = ScrollPosition(edge: .top)
 
     func body(content: Content) -> some View {

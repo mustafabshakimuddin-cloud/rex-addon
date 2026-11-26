@@ -36,7 +36,7 @@ extension Array where Element == ChapterInfo {
 
 /// "Skip Intro", shown while the playhead is inside a chapter named as one.
 struct SkipChapterButton: View {
-    @ObservedObject var time: PlaybackTime
+    var time: PlaybackTime
     let chapters: [ChapterInfo]
     let duration: Double
     /// Credits are left to Up Next when there is a next episode.
@@ -54,7 +54,7 @@ struct SkipChapterButton: View {
             Button {
                 skip(min(chapter.startSeconds + chapter.durationSeconds, max(duration - 1, 0)))
             } label: {
-                Label(title, systemImage: "forward.end.fill")
+                Label(title.localized, systemImage: "forward.end.fill")
                     .font(.headline)
                     .padding(.horizontal, 6)
             }
@@ -68,7 +68,7 @@ struct SkipChapterButton: View {
 
 /// Near the end of an episode: the next one, with a countdown when autoplay is on.
 struct UpNextCard: View {
-    @ObservedObject var time: PlaybackTime
+    var time: PlaybackTime
     let next: Episode
     let showName: String
     let startsAt: Double

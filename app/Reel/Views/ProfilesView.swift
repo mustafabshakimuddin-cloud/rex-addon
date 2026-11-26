@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Who is watching: switch, add, rename and remove profiles.
 struct ProfilesView: View {
-    @EnvironmentObject private var profiles: ProfileStore
+    @Environment(ProfileStore.self) private var profiles
     @State private var editing: Profile?
     @State private var adding = false
     @State private var confirmDelete: Profile?
@@ -117,8 +117,8 @@ struct ProfileBadge: View {
 
 /// Home's profile button: who is watching, and a quick switch.
 struct ProfileSwitcher: View {
-    @EnvironmentObject private var profiles: ProfileStore
-    @EnvironmentObject private var router: AppRouter
+    @Environment(ProfileStore.self) private var profiles
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         // Only once there is someone to switch to; one profile needs no button.

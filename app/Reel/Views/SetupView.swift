@@ -3,9 +3,9 @@ import SwiftUI
 /// First-run setup, also reachable from Settings. One question per page; every step but the first
 /// can be skipped, and the last page lists what is set and what isn't, each with a way back to it.
 struct SetupView: View {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var trakt: TraktStore
-    @EnvironmentObject private var router: AppRouter
+    @Environment(AppSettings.self) private var settings
+    @Environment(TraktStore.self) private var trakt
+    @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step = .welcome
     @State private var keyDraft = ""
@@ -74,7 +74,7 @@ struct SetupView: View {
             header("How should titles play?", systemImage: "key.fill",
                    text: "A debrid service fetches releases for you and streams them over HTTPS. Torrentio needs one to give playable links.")
             VStack(alignment: .leading, spacing: 14) {
-                Picker("Service", selection: $settings.debridService) {
+                Picker("Service", selection: Bindable(settings).debridService) {
                     ForEach(DebridService.allCases) { Text($0 == .none ? "Choose a service" : $0.name).tag($0) }
                 }
                 .pickerStyle(.menu)
@@ -129,15 +129,15 @@ struct SetupView: View {
             header("Your preferences", systemImage: "slider.horizontal.3",
                    text: "How Play chooses, and which audio and subtitles start with a title. All of this can change later in Settings.")
             VStack(alignment: .leading, spacing: 16) {
-                Toggle("Play the best source automatically", isOn: $settings.autoPlayBest)
-                Toggle("Instant sources only", isOn: $settings.cachedOnly)
+                Toggle("Play the best source automatically", isOn: Bindable(settings).autoPlayBest)
+                Toggle("Instant sources only", isOn: Bindable(settings).cachedOnly)
                 Divider().opacity(0.4)
-                Picker("Audio language", selection: $settings.preferredAudioLanguage) {
+                Picker("Audio language", selection: Bindable(settings).preferredAudioLanguage) {
                     ForEach(Languages.options, id: \.0) { Text($0.1).tag($0.0) }
                 }
-                Toggle("Turn on subtitles automatically", isOn: $settings.autoplaySubtitles)
+                Toggle("Turn on subtitles automatically", isOn: Bindable(settings).autoplaySubtitles)
                 if settings.autoplaySubtitles {
-                    Picker("Subtitle language", selection: $settings.preferredSubtitleLanguage) {
+                    Picker("Subtitle language", selection: Bindable(settings).preferredSubtitleLanguage) {
                         ForEach(Languages.options.filter { !$0.0.isEmpty }, id: \.0) { Text($0.1).tag($0.0) }
                     }
                 }
@@ -192,8 +192,8 @@ struct SetupView: View {
                 .foregroundStyle(Theme.accent)
                 .frame(width: 64, height: 64)
                 .glassEffect(.regular.tint(Theme.accent.opacity(0.2)), in: .rect(cornerRadius: 18))
-            Text(title).font(.largeTitle.weight(.bold)).fixedSize(horizontal: false, vertical: true)
-            Text(text).font(.body).foregroundStyle(Theme.secondaryText).fixedSize(horizontal: false, vertical: true)
+            Text(title.localized).font(.largeTitle.weight(.bold)).fixedSize(horizontal: false, vertical: true)
+            Text(text.localized).font(.body).foregroundStyle(Theme.secondaryText).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 22)
@@ -202,7 +202,7 @@ struct SetupView: View {
     private func bullet(_ symbol: String, _ text: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: symbol).foregroundStyle(Theme.accent).frame(width: 24)
-            Text(text).font(.subheadline)
+            Text(text.localized).font(.subheadline)
         }
     }
 
@@ -212,7 +212,7 @@ struct SetupView: View {
                 Image(systemName: value == nil ? "circle.dashed" : "checkmark.circle.fill")
                     .foregroundStyle(value == nil ? Theme.secondaryText : Theme.cached)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.subheadline.weight(.semibold))
+                    Text(title.localized).font(.subheadline.weight(.semibold))
                     Text(value ?? "Not set").font(.caption).foregroundStyle(Theme.secondaryText)
                 }
                 Spacer()
@@ -273,7 +273,7 @@ struct SetupView: View {
 
     private func primary(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
+            Text(title.localized).font(.headline).frame(maxWidth: .infinity).padding(.vertical, 6)
         }
         .buttonStyle(.glassProminent)
     }

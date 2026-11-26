@@ -184,17 +184,17 @@ extension MediaItem {
 @main
 struct ReelApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var settings: AppSettings
-    @StateObject private var library: Library
-    @StateObject private var playback: PlaybackCenter
-    @StateObject private var router: AppRouter
-    @StateObject private var memory: SourceMemory
-    @StateObject private var downloads: DownloadStore
-    @StateObject private var trakt: TraktStore
-    @StateObject private var alerts: AlertCenter
-    @StateObject private var upcoming: UpcomingStore
-    @StateObject private var lists: ListsStore
-    @StateObject private var profiles: ProfileStore
+    @State private var settings: AppSettings
+    @State private var library: Library
+    @State private var playback: PlaybackCenter
+    @State private var router: AppRouter
+    @State private var memory: SourceMemory
+    @State private var downloads: DownloadStore
+    @State private var trakt: TraktStore
+    @State private var alerts: AlertCenter
+    @State private var upcoming: UpcomingStore
+    @State private var lists: ListsStore
+    @State private var profiles: ProfileStore
     @Environment(\.scenePhase) private var scenePhase
     private let stores: AppStores
 
@@ -203,33 +203,33 @@ struct ReelApp: App {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         let stores = AppStores()
         self.stores = stores
-        _settings = StateObject(wrappedValue: stores.settings)
-        _library = StateObject(wrappedValue: stores.library)
-        _playback = StateObject(wrappedValue: stores.playback)
-        _router = StateObject(wrappedValue: stores.router)
-        _memory = StateObject(wrappedValue: stores.memory)
-        _downloads = StateObject(wrappedValue: stores.downloads)
-        _trakt = StateObject(wrappedValue: stores.trakt)
-        _alerts = StateObject(wrappedValue: stores.alerts)
-        _upcoming = StateObject(wrappedValue: stores.upcoming)
-        _lists = StateObject(wrappedValue: stores.lists)
-        _profiles = StateObject(wrappedValue: stores.profiles)
+        _settings = State(wrappedValue: stores.settings)
+        _library = State(wrappedValue: stores.library)
+        _playback = State(wrappedValue: stores.playback)
+        _router = State(wrappedValue: stores.router)
+        _memory = State(wrappedValue: stores.memory)
+        _downloads = State(wrappedValue: stores.downloads)
+        _trakt = State(wrappedValue: stores.trakt)
+        _alerts = State(wrappedValue: stores.alerts)
+        _upcoming = State(wrappedValue: stores.upcoming)
+        _lists = State(wrappedValue: stores.lists)
+        _profiles = State(wrappedValue: stores.profiles)
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environmentObject(settings)
-                .environmentObject(library)
-                .environmentObject(playback)
-                .environmentObject(router)
-                .environmentObject(memory)
-                .environmentObject(downloads)
-                .environmentObject(trakt)
-                .environmentObject(alerts)
-                .environmentObject(upcoming)
-                .environmentObject(lists)
-                .environmentObject(profiles)
+                .environment(settings)
+                .environment(library)
+                .environment(playback)
+                .environment(router)
+                .environment(memory)
+                .environment(downloads)
+                .environment(trakt)
+                .environment(alerts)
+                .environment(upcoming)
+                .environment(lists)
+                .environment(profiles)
                 .preferredColorScheme(.dark)
                 .tint(settings.accent.accent)
                 .onOpenURL { stores.open($0) }

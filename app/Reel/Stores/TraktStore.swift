@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// A change made here that Trakt still has to hear about. Kept on disk until Trakt accepts it, so
@@ -15,24 +16,25 @@ enum TraktChange: Codable, Hashable {
 /// (free, two minutes at trakt.tv/oauth/applications), because a sideloaded app cannot ship a
 /// shared secret safely.
 @MainActor
-final class TraktStore: ObservableObject {
+@Observable
+final class TraktStore {
     enum SignIn: Equatable {
         case idle
         case waiting(code: String, url: String)
         case failed(String)
     }
 
-    @Published private(set) var credentials: Trakt.Credentials?
-    @Published private(set) var isConnected = false
-    @Published private(set) var signIn: SignIn = .idle
-    @Published private(set) var lastSync: Date?
-    @Published private(set) var syncError: String?
-    @Published private(set) var isSyncing = false
+    private(set) var credentials: Trakt.Credentials?
+    private(set) var isConnected = false
+    private(set) var signIn: SignIn = .idle
+    private(set) var lastSync: Date?
+    private(set) var syncError: String?
+    private(set) var isSyncing = false
     /// Changes waiting to reach Trakt.
-    @Published private(set) var pending: [TraktChange] = []
+    private(set) var pending: [TraktChange] = []
 
     private var token: Trakt.Token?
-    private weak var library: Library?
+    @ObservationIgnored private weak var library: Library?
     private var signInTask: Task<Void, Never>?
     /// The one refresh in flight: Trakt's refresh tokens work once, so two refreshing together
     /// would sign the app out.
@@ -187,7 +189,7 @@ final class TraktStore: ObservableObject {
         }
     }
 
-    private static func fetch<T>(if needed: Bool, _ work: () async throws -> T) async throws -> T? {
+    private static func fetch<T: Sendable>(if needed: Bool, _ work: () async throws -> T) async throws -> T? {
         needed ? try await work() : nil
     }
 

@@ -88,14 +88,14 @@ final class MockServer: URLProtocol {
                 "cast": ["Alex Example", "Sam Sample"], "director": [], "videos": videos]
     }
 
-    private static let streams: [[String: Any]] = [
+    private static var streams: [[String: Any]] { [
         ["name": "[RD+] Torrentio\n4k DV | HDR", "title": "Sample.2160p.WEB-DL.DV.HDR.Atmos-GRP\n👤 120 💾 18.2 GB ⚙️ Mock\n🇬🇧",
          "url": "https://example.invalid/4k.mkv", "infoHash": "aaaa", "fileIdx": 0],
         ["name": "[RD+] Torrentio\n1080p", "title": "Sample.1080p.BluRay.x265-GRP\n👤 340 💾 4.1 GB ⚙️ Mock\n🇬🇧",
          "url": "https://example.invalid/1080.mkv", "infoHash": "bbbb", "fileIdx": 0],
         ["name": "[RD download] Torrentio\n720p", "title": "Sample.720p.WEB-DL-GRP\n👤 55 💾 1.2 GB ⚙️ Mock",
          "url": "https://example.invalid/720.mkv", "infoHash": "cccc", "fileIdx": 0],
-    ]
+    ] }
 
     /// A soft gradient picked from the address, so each title gets its own colour.
     private static func picture(for key: String) -> Data {

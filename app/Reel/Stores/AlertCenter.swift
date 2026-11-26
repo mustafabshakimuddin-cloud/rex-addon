@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// Something worth telling you about: a download that finished or failed, a sync that broke.
@@ -36,11 +37,12 @@ struct AppAlert: Identifiable, Codable, Hashable {
 /// Pop-ups and the list of recent alerts under Settings → Status. A pop-up shows for a few seconds
 /// over whatever is on screen; the list keeps the last few dozen across launches.
 @MainActor
-final class AlertCenter: ObservableObject {
-    @Published private(set) var current: AppAlert?
-    @Published private(set) var recent: [AppAlert] = []
+@Observable
+final class AlertCenter {
+    private(set) var current: AppAlert?
+    private(set) var recent: [AppAlert] = []
     /// Alerts not yet seen in the list; Settings shows a red dot while there are problems among them.
-    @Published private(set) var unseenProblems = 0 { didSet { defaults.set(unseenProblems, forKey: Self.unseenKey) } }
+    private(set) var unseenProblems = 0 { didSet { defaults.set(unseenProblems, forKey: Self.unseenKey) } }
 
     private let defaults = UserDefaults.standard
     private var dismissTask: Task<Void, Never>?

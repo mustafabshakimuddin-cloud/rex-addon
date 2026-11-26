@@ -3,10 +3,10 @@ import SwiftUI
 // MARK: - Search
 
 struct SearchView: View {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(AppSettings.self) private var settings
+    @Environment(AppRouter.self) private var router
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @State private var query = ""
@@ -93,7 +93,7 @@ struct SearchView: View {
         .navigationTitle("Search")
         .searchable(text: $query, prompt: "Titles, cast and directors")
         .searchScopes($scope) {
-            ForEach(SearchScope.allCases) { Text($0.rawValue).tag($0) }
+            ForEach(SearchScope.allCases) { Text($0.rawValue.localized).tag($0) }
         }
         .onSubmit(of: .search) { settings.rememberSearch(query) }
         .onChange(of: router.pendingSearch, initial: true) { _, text in

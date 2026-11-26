@@ -42,12 +42,12 @@ enum LibrarySort: String, CaseIterable, Identifiable {
 }
 
 struct LibraryView: View {
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var upcoming: UpcomingStore
+    @Environment(Library.self) private var library
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppRouter.self) private var router
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(UpcomingStore.self) private var upcoming
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @AppStorage("library.display") private var display: LibraryDisplay = .posters
@@ -170,13 +170,13 @@ struct LibraryView: View {
                 if display != .overview {
                     Menu {
                         Picker("Show", selection: $filter) {
-                            ForEach(LibraryFilter.allCases) { Text($0.title).tag($0) }
+                            ForEach(LibraryFilter.allCases) { Text($0.title.localized).tag($0) }
                         }
                         Picker("Sort", selection: $sort) {
-                            ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                            ForEach(LibrarySort.allCases) { Text($0.title.localized).tag($0) }
                         }
                     } label: {
-                        Label(filter == .all ? "Filter" : filter.title, systemImage: "line.3.horizontal.decrease.circle")
+                        Label(filter == .all ? "Filter".localized : filter.title.localized, systemImage: "line.3.horizontal.decrease.circle")
                             .font(.subheadline.weight(.semibold))
                     }
                 }
@@ -280,9 +280,9 @@ struct LibraryView: View {
 
 /// Library's Overview: what's in My List and what you've watched, as numbers and bars.
 struct LibraryOverview: View {
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var upcoming: UpcomingStore
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(UpcomingStore.self) private var upcoming
 
     private var watchedCount: Int { library.history.filter(\.isFinished).count }
     /// Time actually played: titles marked watched by hand have no real duration to count.

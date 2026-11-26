@@ -1,12 +1,13 @@
 import SwiftUI
 
 @MainActor
-final class DetailModel: ObservableObject {
-    @Published var detail: MediaDetail?
-    @Published var error: String?
-    @Published var season: Int = 1
+@Observable
+final class DetailModel {
+    var detail: MediaDetail?
+    var error: String?
+    var season: Int = 1
 
-    @Published var isLoading = false
+    var isLoading = false
 
     func load(_ item: MediaItem, library: Library, force: Bool = false) async {
         guard detail == nil || force, !isLoading else { return }
@@ -34,15 +35,15 @@ final class DetailModel: ObservableObject {
 
 struct DetailView: View {
     let item: MediaItem
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var downloads: DownloadStore
-    @EnvironmentObject private var upcoming: UpcomingStore
-    @EnvironmentObject private var trakt: TraktStore
+    @Environment(Library.self) private var library
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(DownloadStore.self) private var downloads
+    @Environment(UpcomingStore.self) private var upcoming
+    @Environment(TraktStore.self) private var trakt
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.openURL) private var openURL
-    @StateObject private var model = DetailModel()
+    @State private var model = DetailModel()
     @State private var width: CGFloat = 390
     @State private var height: CGFloat = 844
     @State private var expandedOverview = false
@@ -522,10 +523,10 @@ struct EpisodeRow: View {
 /// Popular titles that share this one's main genre.
 struct MoreLikeThis: View {
     let item: MediaItem
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var trakt: TraktStore
+    @Environment(Library.self) private var library
+    @Environment(TraktStore.self) private var trakt
     @State private var fromTrakt = false
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @State private var items: [MediaItem] = []

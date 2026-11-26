@@ -2,9 +2,9 @@ import SwiftUI
 
 /// What you've watched, newest first and grouped by day: Today, Yesterday, then dates.
 struct HistoryView: View {
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(Library.self) private var library
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppSettings.self) private var settings
     @State private var filter: LibraryFilter = .all
     @State private var confirmClear = false
 
@@ -37,7 +37,7 @@ struct HistoryView: View {
                 Section {
                     Picker("Show", selection: $filter) {
                         ForEach(LibraryFilter.allCases) { option in
-                            Text(option == .unwatched ? "Unfinished" : option.title).tag(option)
+                            Text((option == .unwatched ? "Unfinished" : option.title).localized).tag(option)
                         }
                     }
                     .pickerStyle(.segmented)

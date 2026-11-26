@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// Someone who watches on this device. Each has their own My List, history, resume points,
@@ -26,9 +27,10 @@ struct Profile: Codable, Identifiable, Hashable {
 }
 
 @MainActor
-final class ProfileStore: ObservableObject {
-    @Published private(set) var profiles: [Profile]
-    @Published private(set) var current: Profile
+@Observable
+final class ProfileStore {
+    private(set) var profiles: [Profile]
+    private(set) var current: Profile
 
     /// The current profile's key prefix, read by stores that keep small things in UserDefaults.
     nonisolated(unsafe) static var currentKeySuffix = ""

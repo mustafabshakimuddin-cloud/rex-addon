@@ -3,7 +3,7 @@ import SwiftUI
 /// "Add to List" for a title: every list of yours with a tick, and a way to start a new one.
 struct AddToListMenu: View {
     let item: MediaItem
-    @EnvironmentObject private var lists: ListsStore
+    @Environment(ListsStore.self) private var lists
     @State private var naming = false
     @State private var newName = ""
 
@@ -34,8 +34,8 @@ struct AddToListMenu: View {
 
 /// Your lists and your Trakt lists, from Library.
 struct ListsSection: View {
-    @EnvironmentObject private var lists: ListsStore
-    @EnvironmentObject private var trakt: TraktStore
+    @Environment(ListsStore.self) private var lists
+    @Environment(TraktStore.self) private var trakt
     @State private var traktLists: [Trakt.List] = []
     @State private var naming = false
     @State private var newName = ""
@@ -114,10 +114,10 @@ enum ListRoute: Hashable {
 /// One list as a grid; your own can be renamed, reordered and emptied.
 struct ListDetailView: View {
     let route: ListRoute
-    @EnvironmentObject private var lists: ListsStore
-    @EnvironmentObject private var trakt: TraktStore
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(ListsStore.self) private var lists
+    @Environment(TraktStore.self) private var trakt
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @Environment(\.dismiss) private var dismiss

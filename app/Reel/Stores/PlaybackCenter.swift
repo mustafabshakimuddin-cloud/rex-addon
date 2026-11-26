@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 import AetherEngine
 
@@ -24,15 +25,16 @@ struct PlayerSession: Identifiable, Equatable {
 /// rank them by what has actually played before, resolve the best through the debrid service
 /// (falling back to the next if one fails, before or after the player opens), and present it.
 @MainActor
-final class PlaybackCenter: ObservableObject {
-    @Published var session: PlayerSession?
-    @Published private(set) var preparing: PlaybackTarget?
-    @Published var errorMessage: String?
-    @Published var needsDebridSetup = false
+@Observable
+final class PlaybackCenter {
+    var session: PlayerSession?
+    private(set) var preparing: PlaybackTarget?
+    var errorMessage: String?
+    var needsDebridSetup = false
     /// Set to show the source list for a title; RootView presents it.
-    @Published var choosingSource: PlaybackTarget?
+    var choosingSource: PlaybackTarget?
     /// Shown briefly over the player while a failed source is being replaced.
-    @Published private(set) var fallbackNotice: String?
+    private(set) var fallbackNotice: String?
     /// Whether the source picked from that list should start over rather than resume.
     private(set) var chooseFromStart = false
 

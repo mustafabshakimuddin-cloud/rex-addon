@@ -10,11 +10,11 @@ enum CalendarLayout: String, CaseIterable, Identifiable {
 /// New and upcoming episodes of the series you follow, day by day. Cards shows each episode's
 /// picture; List is compact. Recent looks back a month for what you may have missed.
 struct CalendarView: View {
-    @EnvironmentObject private var upcoming: UpcomingStore
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var router: AppRouter
+    @Environment(UpcomingStore.self) private var upcoming
+    @Environment(Library.self) private var library
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppSettings.self) private var settings
+    @Environment(AppRouter.self) private var router
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
     @AppStorage("calendar.layout") private var layout: CalendarLayout = .cards
@@ -48,7 +48,7 @@ struct CalendarView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 24, pinnedViews: [.sectionHeaders]) {
                 Picker("Show", selection: $span) {
-                    ForEach(Span.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Span.allCases) { Text($0.rawValue.localized).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 360)
@@ -126,7 +126,7 @@ struct CalendarView: View {
         else if calendar.isDateInYesterday(day.date) { title = "Yesterday" }
         else { title = day.date.formatted(.dateTime.weekday(.wide).day().month(.wide)) }
         return HStack(alignment: .firstTextBaseline) {
-            Text(title).font(.headline)
+            Text(title.localized).font(.headline)
             Text(day.episodes.count == 1 ? "1 episode" : "\(day.episodes.count) episodes")
                 .font(.caption).foregroundStyle(Theme.secondaryText)
             Spacer()

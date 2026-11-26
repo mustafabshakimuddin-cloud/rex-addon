@@ -21,19 +21,20 @@ struct PersonRoute: Hashable {
 
 /// App-wide navigation requests that aren't owned by one screen.
 @MainActor
-final class AppRouter: ObservableObject {
-    @Published var tab: AppTab = .home
-    @Published var showingSettings = false
-    @Published var showingSetup = false
-    @Published var homePath = NavigationPath()
-    @Published var libraryPath = NavigationPath()
-    @Published var settingsPath = NavigationPath()
-    @Published var explorePath = NavigationPath()
-    @Published var calendarPath = NavigationPath()
-    @Published var searchPath = NavigationPath()
-    @Published var exploreKind: MediaKind = .movie
+@Observable
+final class AppRouter {
+    var tab: AppTab = .home
+    var showingSettings = false
+    var showingSetup = false
+    var homePath = NavigationPath()
+    var libraryPath = NavigationPath()
+    var settingsPath = NavigationPath()
+    var explorePath = NavigationPath()
+    var calendarPath = NavigationPath()
+    var searchPath = NavigationPath()
+    var exploreKind: MediaKind = .movie
     /// Raised when the current tab is chosen again: its screen scrolls back to the top.
-    @Published private(set) var scrollToTop: AppTab?
+    private(set) var scrollToTop: AppTab?
     /// Run once the Settings sheet has finished closing.
     private var afterSettings: (() -> Void)?
 
@@ -72,7 +73,7 @@ final class AppRouter: ObservableObject {
     }
 
     /// Words for Search to look up, from a shortcut; Search takes them when it appears.
-    @Published var pendingSearch: String?
+    var pendingSearch: String?
 
     func search(_ text: String) {
         closeSettings {
@@ -147,13 +148,13 @@ extension View {
 }
 
 struct RootView: View {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var trakt: TraktStore
-    @EnvironmentObject private var alerts: AlertCenter
-    @EnvironmentObject private var upcoming: UpcomingStore
+    @Environment(AppSettings.self) private var settings
+    @Environment(Library.self) private var library
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(AppRouter.self) private var router
+    @Environment(TraktStore.self) private var trakt
+    @Environment(AlertCenter.self) private var alerts
+    @Environment(UpcomingStore.self) private var upcoming
 
     var body: some View {
         let attention = Attention(settings: settings, library: library, trakt: trakt, upcoming: upcoming)
@@ -161,20 +162,20 @@ struct RootView: View {
         // unfolded iPhone Duo (and iPad) the adaptable style turns it into a side rail/sidebar.
         TabView(selection: router.tabSelection) {
             Tab("Home", systemImage: "house.fill", value: AppTab.home) {
-                NavigationStack(path: $router.homePath) { HomeView().appDestinations() }
+                NavigationStack(path: Bindable(router).homePath) { HomeView().appDestinations() }
             }
             .badge(attention.badgeCount)
             Tab("Explore", systemImage: "safari", value: AppTab.explore) {
-                NavigationStack(path: $router.explorePath) { ExploreView().appDestinations() }
+                NavigationStack(path: Bindable(router).explorePath) { ExploreView().appDestinations() }
             }
             Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                NavigationStack(path: $router.calendarPath) { CalendarView().appDestinations() }
+                NavigationStack(path: Bindable(router).calendarPath) { CalendarView().appDestinations() }
             }
             Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.library) {
-                NavigationStack(path: $router.libraryPath) { LibraryView().appDestinations() }
+                NavigationStack(path: Bindable(router).libraryPath) { LibraryView().appDestinations() }
             }
             Tab(value: AppTab.search, role: .search) {
-                NavigationStack(path: $router.searchPath) { SearchView().appDestinations() }
+                NavigationStack(path: Bindable(router).searchPath) { SearchView().appDestinations() }
             }
         }
         .tabViewStyle(.sidebarAdaptable)
@@ -187,8 +188,8 @@ struct RootView: View {
         .overlay(alignment: .bottom) { preparingHUD }
         .overlay(alignment: .top) { AlertToast() }
         // Five tabs fit an iPhone tab bar without a "More" tab; Settings is a gear and a sheet.
-        .sheet(isPresented: $router.showingSettings, onDismiss: { router.settingsDismissed() }) {
-            NavigationStack(path: $router.settingsPath) {
+        .sheet(isPresented: Bindable(router).showingSettings, onDismiss: { router.settingsDismissed() }) {
+            NavigationStack(path: Bindable(router).settingsPath) {
                 SettingsView()
                     .toolbar {
                         // A symbol, not just a word: on iPhone Duo's outer display the bar is a
@@ -200,15 +201,15 @@ struct RootView: View {
             }
             .environment(\.cardScale, settings.posterSize.scale)
         }
-        .fullScreenCover(isPresented: $router.showingSetup) {
+        .fullScreenCover(isPresented: Bindable(router).showingSetup) {
             SetupView()
         }
-        .sheet(item: $playback.choosingSource) { target in
+        .sheet(item: Bindable(playback).choosingSource) { target in
             SourcesSheet(target: target)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .fullScreenCover(item: $playback.session, onDismiss: { playback.playerDismissed() }) { session in
+        .fullScreenCover(item: Bindable(playback).session, onDismiss: { playback.playerDismissed() }) { session in
             PlayerView(session: session)
         }
         .task {
@@ -254,7 +255,7 @@ struct RootView: View {
         } message: {
             Text(playback.errorMessage ?? "")
         }
-        .alert("Add a debrid service", isPresented: $playback.needsDebridSetup) {
+        .alert("Add a debrid service", isPresented: Bindable(playback).needsDebridSetup) {
             Button("Set Up") { router.openSetup() }
             Button("Open Settings") { router.openSettings() }
             Button("Not now", role: .cancel) {}
@@ -293,8 +294,8 @@ struct RootView: View {
 /// The pop-up for the newest alert: a glass card under the status bar. Tap its button to go where
 /// the alert points, swipe it up or wait to dismiss it.
 struct AlertToast: View {
-    @EnvironmentObject private var alerts: AlertCenter
-    @EnvironmentObject private var router: AppRouter
+    @Environment(AlertCenter.self) private var alerts
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         ZStack {
@@ -304,7 +305,7 @@ struct AlertToast: View {
                         .font(.title3)
                         .foregroundStyle(tint(alert.level))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(alert.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                        Text(alert.title.localized).font(.subheadline.weight(.semibold)).lineLimit(1)
                         if let message = alert.message {
                             Text(message).font(.caption).foregroundStyle(Theme.secondaryText).lineLimit(2)
                         }

@@ -121,7 +121,7 @@ struct ListsTests {
         #expect(!store.contains(film, in: list.id))
         store.toggle(film, in: list.id)
         store.saveNow()
-        Thread.sleep(forTimeInterval: 0.3)
+        store.waitForSave()
         let again = ListsStore(fileURL: url)
         #expect(again.lists(containing: film).map(\.name) == ["Weekend"])
     }

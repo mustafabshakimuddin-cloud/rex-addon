@@ -1,3 +1,4 @@
+import Observation
 import AVFoundation
 import CoreGraphics
 import AVKit
@@ -22,18 +23,20 @@ enum EngineHost {
 /// The position the scrubber shows, kept apart from PlayerModel: the engine's clock ticks ten
 /// times a second, and only the scrubber and its time labels should redraw on a tick.
 @MainActor
-final class PlaybackTime: ObservableObject {
-    @Published fileprivate(set) var currentTime: Double = 0
+@Observable
+final class PlaybackTime {
+    fileprivate(set) var currentTime: Double = 0
     /// Published in whole-second steps: the buffered bar is a few points wide per minute of film.
-    @Published fileprivate(set) var buffered: Double = 0
+    fileprivate(set) var buffered: Double = 0
 }
 
 /// The subtitle cues on screen now. The engine republishes its whole cue list on every subtitle
 /// drain tick (twice a second) and the source clock ten times a second; this turns both into one
 /// publication each time the visible set actually changes, which is a few times a minute.
 @MainActor
-final class SubtitleFeed: ObservableObject {
-    @Published private(set) var visible: [SubtitleCue] = []
+@Observable
+final class SubtitleFeed {
+    private(set) var visible: [SubtitleCue] = []
     private var cues: [SubtitleCue] = []
     private var now: Double = 0
     /// Positive shows subtitles later, negative earlier.
@@ -66,42 +69,43 @@ final class SubtitleFeed: ObservableObject {
 
 /// Mirrors the engine's published state for the player UI and drives a playback session.
 @MainActor
-final class PlayerModel: ObservableObject {
+@Observable
+final class PlayerModel {
     let engine: AetherEngine?
 
-    @Published private(set) var state: PlaybackState = .idle
-    @Published private(set) var phase: PlaybackPhase = .idle
-    @Published private(set) var duration: Double = 0
+    private(set) var state: PlaybackState = .idle
+    private(set) var phase: PlaybackPhase = .idle
+    private(set) var duration: Double = 0
     let time = PlaybackTime()
     let subtitles = SubtitleFeed()
     var currentTime: Double { time.currentTime }
-    @Published private(set) var audioTracks: [TrackInfo] = []
-    @Published private(set) var subtitleTracks: [TrackInfo] = []
-    @Published private(set) var activeAudio: Int?
-    @Published private(set) var activeSubtitle: Int?
-    @Published private(set) var videoFormat: VideoFormat = .sdr
-    @Published private(set) var hasFirstFrame = false
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var rate: Float = 1
-    @Published private(set) var chapters: [ChapterInfo] = []
-    @Published private(set) var subtitleDelay: Double = 0
-    @Published private(set) var onlineSubtitles: [OnlineSubtitles.Result] = []
-    @Published private(set) var searchingSubtitles = false
+    private(set) var audioTracks: [TrackInfo] = []
+    private(set) var subtitleTracks: [TrackInfo] = []
+    private(set) var activeAudio: Int?
+    private(set) var activeSubtitle: Int?
+    private(set) var videoFormat: VideoFormat = .sdr
+    private(set) var hasFirstFrame = false
+    private(set) var errorMessage: String?
+    private(set) var rate: Float = 1
+    private(set) var chapters: [ChapterInfo] = []
+    private(set) var subtitleDelay: Double = 0
+    private(set) var onlineSubtitles: [OnlineSubtitles.Result] = []
+    private(set) var searchingSubtitles = false
     /// Raised each time the engine reports a rebuffer, for the source memory.
-    @Published private(set) var stallCount = 0
-    @Published var fillsScreen = false {
+    private(set) var stallCount = 0
+    var fillsScreen = false {
         didSet { engine?.videoGravity = fillsScreen ? .resizeAspectFill : .resizeAspect }
     }
     /// When playback pauses by itself: after a set time, or at the end of this episode.
-    @Published var sleepTimer: SleepTimer? {
+    var sleepTimer: SleepTimer? {
         didSet { sleepFired = false }
     }
     /// Raised when the sleep timer paused playback.
-    @Published private(set) var sleepFired = false
+    private(set) var sleepFired = false
     /// Being held for double speed.
-    @Published private(set) var boosted = false
+    private(set) var boosted = false
     /// Whether night mode and the dialogue lift are reaching the speakers.
-    @Published private(set) var shapingState: AudioShapingState = .off
+    private(set) var shapingState: AudioShapingState = .off
 
     enum SleepTimer: Equatable {
         case at(Date)
@@ -116,7 +120,7 @@ final class PlayerModel: ObservableObject {
     }
 
     let pip = PictureInPicture()
-    private var bag = Set<AnyCancellable>()
+    @ObservationIgnored private var bag = Set<AnyCancellable>()
     private var started = false
     private var restoring = false
     private var lastSaved: Double = -100
@@ -160,9 +164,6 @@ final class PlayerModel: ObservableObject {
             self.saveProgress(force: false)
             self.checkSleepTimer()
         }.store(in: &bag)
-        // The PiP button reads pip.isPossible, which turns true a moment after the layer is ready;
-        // pass its changes through so the player view redraws when it does.
-        pip.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &bag)
         // A new AVPlayer (every load and reroute) means a new layer to build PiP around.
         engine.$currentAVPlayer.sink { [weak self] _ in
             guard let self, let engine = self.engine else { return }
@@ -422,11 +423,12 @@ final class PlayerModel: ObservableObject {
 /// Picture in Picture around the engine's own AVPlayerLayer (the native route). The engine keeps
 /// the pipeline alive in the background while `pictureInPictureActive` is set.
 @MainActor
-final class PictureInPicture: NSObject, ObservableObject, AVPictureInPictureControllerDelegate {
-    @Published private(set) var isPossible = false
-    @Published private(set) var isActive = false
+@Observable
+final class PictureInPicture: NSObject, AVPictureInPictureControllerDelegate {
+    private(set) var isPossible = false
+    private(set) var isActive = false
     private var controller: AVPictureInPictureController?
-    private weak var engine: AetherEngine?
+    @ObservationIgnored private weak var engine: AetherEngine?
     private var possibleObservation: AnyCancellable?
 
     func attach(layer: AVPlayerLayer?, engine: AetherEngine) {

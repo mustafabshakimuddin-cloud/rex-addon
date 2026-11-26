@@ -50,6 +50,9 @@ def difference(a, b):
 
 def main():
     shots, references = sys.argv[1], sys.argv[2]
+    if not os.path.isdir(shots):
+        print("No screenshots were taken.")
+        return
     names = sorted(f for f in os.listdir(shots) if f.endswith("-small.jpg"))
     if not names:
         print("No screenshots to compare.")

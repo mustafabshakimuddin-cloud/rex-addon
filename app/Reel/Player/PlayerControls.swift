@@ -7,7 +7,7 @@ import AetherEngine
 
 /// The scrubber and time labels: the only part of the controls that follows the clock.
 struct TimelineBar: View {
-    @ObservedObject var time: PlaybackTime
+    var time: PlaybackTime
     let duration: Double
     let chapters: [ChapterInfo]
     let preview: (Double) async -> CGImage?
@@ -176,7 +176,7 @@ struct SkipFlashView: View {
 
 /// Skips intros and recaps by itself, once per chapter, when Settings asks for it.
 struct AutoSkipper: View {
-    @ObservedObject var time: PlaybackTime
+    var time: PlaybackTime
     let chapters: [ChapterInfo]
     let duration: Double
     let intro: Bool
@@ -201,7 +201,7 @@ struct AutoSkipper: View {
 
 /// Runs an action once, when the playhead first passes a time.
 struct TimeTrigger: View {
-    @ObservedObject var time: PlaybackTime
+    var time: PlaybackTime
     let at: Double
     let action: () -> Void
     @State private var fired = false
@@ -220,7 +220,7 @@ struct TimeTrigger: View {
 
 /// "Skip Intro" from where you skipped in an earlier episode, for files without chapters.
 struct LearnedSkipButton: View {
-    @ObservedObject var time: PlaybackTime
+    var time: PlaybackTime
     let start: Double
     let end: Double
     let skip: (Double) -> Void

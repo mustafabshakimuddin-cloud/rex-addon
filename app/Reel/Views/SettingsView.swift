@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var trakt: TraktStore
-    @EnvironmentObject private var memory: SourceMemory
-    @EnvironmentObject private var alerts: AlertCenter
-    @EnvironmentObject private var router: AppRouter
-    @EnvironmentObject private var profiles: ProfileStore
+    @Environment(AppSettings.self) private var settings
+    @Environment(TraktStore.self) private var trakt
+    @Environment(SourceMemory.self) private var memory
+    @Environment(AlertCenter.self) private var alerts
+    @Environment(AppRouter.self) private var router
+    @Environment(ProfileStore.self) private var profiles
     @State private var confirmForget = false
     @State private var keyDraft = ""
     @State private var secondKeyDraft = ""
@@ -48,7 +48,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Picker("Service", selection: $settings.debridService) {
+                Picker("Service", selection: Bindable(settings).debridService) {
                     ForEach(DebridService.allCases) { Text($0.name).tag($0) }
                 }
                 if settings.debridService != .none {
@@ -84,7 +84,7 @@ struct SettingsView: View {
 
             if settings.isDebridConfigured {
                 Section {
-                    Picker("Second service", selection: $settings.secondaryService) {
+                    Picker("Second service", selection: Bindable(settings).secondaryService) {
                         ForEach(DebridService.allCases.filter { $0 != settings.debridService }) { Text($0.name).tag($0) }
                     }
                     if settings.secondaryService != .none {
@@ -116,14 +116,14 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Play the best source automatically", isOn: $settings.autoPlayBest)
+                Toggle("Play the best source automatically", isOn: Bindable(settings).autoPlayBest)
                 NavigationLink(value: SettingsPage.pickRules) {
                     LabeledContent("Pick rules", value: pickRulesSummary)
                 }
                 NavigationLink(value: SettingsPage.addons) {
                     LabeledContent("Stremio addons", value: settings.addons.isEmpty ? "None" : "\(settings.addons.filter(\.enabled).count) on")
                 }
-                Toggle("Get streams ready on title pages", isOn: $settings.prepareAhead)
+                Toggle("Get streams ready on title pages", isOn: Bindable(settings).prepareAhead)
             } header: {
                 Text("Sources")
             } footer: {
@@ -131,10 +131,10 @@ struct SettingsView: View {
             }
 
             Section {
-                Toggle("Play next episode automatically", isOn: $settings.autoPlayNext)
-                Toggle("Show Skip Intro and Skip Credits", isOn: $settings.showSkipButtons)
-                Toggle("Skip intros automatically", isOn: $settings.autoSkipIntro)
-                Toggle("Skip recaps automatically", isOn: $settings.autoSkipRecap)
+                Toggle("Play next episode automatically", isOn: Bindable(settings).autoPlayNext)
+                Toggle("Show Skip Intro and Skip Credits", isOn: Bindable(settings).showSkipButtons)
+                Toggle("Skip intros automatically", isOn: Bindable(settings).autoSkipIntro)
+                Toggle("Skip recaps automatically", isOn: Bindable(settings).autoSkipRecap)
                 Button("Forget player choices") { ViewingPreferences.forgetAll() }
                 Button("Forget source history", role: .destructive) { confirmForget = true }
                     .confirmationDialog("Forget which sources played well and which failed?", isPresented: $confirmForget, titleVisibility: .visible) {
@@ -167,20 +167,20 @@ struct SettingsView: View {
             }
 
             Section {
-                Picker("Audio language", selection: $settings.preferredAudioLanguage) {
+                Picker("Audio language", selection: Bindable(settings).preferredAudioLanguage) {
                     ForEach(Languages.options, id: \.0) { Text($0.1).tag($0.0) }
                 }
-                Toggle("Turn on subtitles automatically", isOn: $settings.autoplaySubtitles)
-                Picker("Subtitle language", selection: $settings.preferredSubtitleLanguage) {
+                Toggle("Turn on subtitles automatically", isOn: Bindable(settings).autoplaySubtitles)
+                Picker("Subtitle language", selection: Bindable(settings).preferredSubtitleLanguage) {
                     ForEach(Languages.options.filter { !$0.0.isEmpty }, id: \.0) { Text($0.1).tag($0.0) }
                 }
-                Toggle("Find subtitles online when missing", isOn: $settings.searchOnlineSubtitles)
-                Toggle("Night mode", isOn: $settings.nightMode)
-                Picker("Dialogue boost", selection: $settings.dialogueBoostDB) {
+                Toggle("Find subtitles online when missing", isOn: Bindable(settings).searchOnlineSubtitles)
+                Toggle("Night mode", isOn: Bindable(settings).nightMode)
+                Picker("Dialogue boost", selection: Bindable(settings).dialogueBoostDB) {
                     Text("Off").tag(0.0)
                     ForEach([3.0, 6.0, 9.0, 12.0], id: \.self) { Text("+\(Int($0)) dB").tag($0) }
                 }
-                Toggle("Lift quiet films", isOn: $settings.liftQuietSources)
+                Toggle("Lift quiet films", isOn: Bindable(settings).liftQuietSources)
             } header: {
                 Text("Player")
             } footer: {
@@ -190,25 +190,25 @@ struct SettingsView: View {
             Section("Subtitle Appearance") {
                 VStack(alignment: .leading) {
                     LabeledContent("Size", value: "\(Int(settings.subtitleScale * 100))%")
-                    Slider(value: $settings.subtitleScale, in: 0.7...1.6, step: 0.1)
+                    Slider(value: Bindable(settings).subtitleScale, in: 0.7...1.6, step: 0.1)
                 }
-                Picker("Style", selection: $settings.subtitleStyle) {
-                    ForEach(SubtitleStyle.allCases) { Text($0.title).tag($0) }
+                Picker("Style", selection: Bindable(settings).subtitleStyle) {
+                    ForEach(SubtitleStyle.allCases) { Text($0.title.localized).tag($0) }
                 }
-                Picker("Colour", selection: $settings.subtitleColor) {
-                    ForEach(SubtitleColor.allCases) { Text($0.title).tag($0) }
+                Picker("Colour", selection: Bindable(settings).subtitleColor) {
+                    ForEach(SubtitleColor.allCases) { Text($0.title.localized).tag($0) }
                 }
                 if settings.subtitleStyle == .box {
                     VStack(alignment: .leading) {
                         LabeledContent("Box", value: "\(Int(settings.subtitleBoxOpacity * 100))%")
-                        Slider(value: $settings.subtitleBoxOpacity, in: 0.3...1, step: 0.05)
+                        Slider(value: Bindable(settings).subtitleBoxOpacity, in: 0.3...1, step: 0.05)
                     }
                 }
                 VStack(alignment: .leading) {
                     LabeledContent("Height", value: settings.subtitleLift == 0 ? "Default" : "+\(Int(settings.subtitleLift)) pt")
-                    Slider(value: $settings.subtitleLift, in: 0...120, step: 10)
+                    Slider(value: Bindable(settings).subtitleLift, in: 0...120, step: 10)
                 }
-                Toggle("Follow the system text size", isOn: $settings.subtitleFollowsTextSize)
+                Toggle("Follow the system text size", isOn: Bindable(settings).subtitleFollowsTextSize)
                 SubtitlePreview(appearance: settings.subtitleAppearance)
             }
 
@@ -216,8 +216,8 @@ struct SettingsView: View {
                 NavigationLink(value: SettingsPage.offline) {
                     LabeledContent("Offline copies", value: settings.downloadsOverCellular ? "Wi-Fi and cellular" : "Wi-Fi only")
                 }
-                Toggle("Tell me about new episodes", isOn: $settings.notifyNewEpisodes)
-                Toggle("Tell me when a download finishes", isOn: $settings.notifyDownloads)
+                Toggle("Tell me about new episodes", isOn: Bindable(settings).notifyNewEpisodes)
+                Toggle("Tell me when a download finishes", isOn: Bindable(settings).notifyDownloads)
             } header: {
                 Text("Downloads and Notifications")
             } footer: {
@@ -229,7 +229,7 @@ struct SettingsView: View {
                     LabeledContent("Appearance") {
                         HStack(spacing: 6) {
                             Circle().fill(settings.accent.accent).frame(width: 12, height: 12)
-                            Text(settings.accent.title)
+                            Text(settings.accent.title.localized)
                         }
                     }
                 }
@@ -341,16 +341,16 @@ struct SettingsView: View {
 /// Which releases are listed, and which one Play picks. Reached from Settings and from the
 /// sources list itself.
 struct PickRulesView: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
 
     var body: some View {
         Form {
             Section {
-                Toggle("Instant sources only", isOn: $settings.cachedOnly)
-                Picker("Sort", selection: $settings.sort) {
-                    ForEach(TorrentioSort.allCases) { Text($0.title).tag($0) }
+                Toggle("Instant sources only", isOn: Bindable(settings).cachedOnly)
+                Picker("Sort", selection: Bindable(settings).sort) {
+                    ForEach(TorrentioSort.allCases) { Text($0.title.localized).tag($0) }
                 }
-                Picker("Maximum size", selection: $settings.maxSizeGB) {
+                Picker("Maximum size", selection: Bindable(settings).maxSizeGB) {
                     Text("No limit").tag(0)
                     ForEach([2, 5, 10, 20, 40], id: \.self) { Text("\($0) GB").tag($0) }
                 }
@@ -359,16 +359,16 @@ struct PickRulesView: View {
             }
             Section {
                 NavigationLink {
-                    MultiSelectList(title: "Hide Qualities", options: TorrentioConfig.qualityOptions, selection: $settings.excludedQualities, label: SettingsView.qualityLabel)
+                    MultiSelectList(title: "Hide Qualities", options: TorrentioConfig.qualityOptions, selection: Bindable(settings).excludedQualities, label: SettingsView.qualityLabel)
                 } label: {
                     LabeledContent("Hide qualities", value: settings.excludedQualities.isEmpty ? "None" : settings.excludedQualities.map(SettingsView.qualityLabel).joined(separator: ", "))
                 }
                 NavigationLink {
-                    MultiSelectList(title: "Providers", options: TorrentioConfig.allProviders, selection: $settings.providers, label: { $0 })
+                    MultiSelectList(title: "Providers", options: TorrentioConfig.allProviders, selection: Bindable(settings).providers, label: { $0 })
                 } label: {
                     LabeledContent("Providers", value: settings.providers.isEmpty ? "All" : "\(settings.providers.count) selected")
                 }
-                Picker("Minimum seeders", selection: $settings.minSeeders) {
+                Picker("Minimum seeders", selection: Bindable(settings).minSeeders) {
                     Text("Any").tag(0)
                     ForEach([5, 10, 25, 50], id: \.self) { Text("\($0)").tag($0) }
                 }
@@ -376,12 +376,12 @@ struct PickRulesView: View {
                 Text("Play picks instant sources first, then your quality order, then your preferences below, then what has played well for you before. Changes apply to the next search. The seeder minimum applies to releases that aren't instant.")
             }
             Section {
-                leaning("HDR", $settings.preferHDR)
-                leaning("Dolby Vision", $settings.preferDolbyVision)
-                leaning("Dolby Atmos", $settings.preferAtmos)
-                leaning("Remux", $settings.preferRemux)
-                Toggle("Favour my audio language", isOn: $settings.preferAudioLanguageReleases)
-                Toggle("Match this device", isOn: $settings.matchDevice)
+                leaning("HDR", Bindable(settings).preferHDR)
+                leaning("Dolby Vision", Bindable(settings).preferDolbyVision)
+                leaning("Dolby Atmos", Bindable(settings).preferAtmos)
+                leaning("Remux", Bindable(settings).preferRemux)
+                Toggle("Favour my audio language", isOn: Bindable(settings).preferAudioLanguageReleases)
+                Toggle("Match this device", isOn: Bindable(settings).matchDevice)
                 NavigationLink {
                     GroupsList()
                 } label: {
@@ -393,7 +393,7 @@ struct PickRulesView: View {
                 Text("Within a quality, these decide which release comes first. Matching the device passes over Dolby Vision and HDR on screens that can't show them, and AV1 where the chip can't decode it\(AppSettings.deviceSupport.av1 ? "" : " (this one can't)"). Long-press a source to prefer its release group.")
             }
             Section {
-                TextField("Server", text: $settings.torrentioServer)
+                TextField("Server", text: Bindable(settings).torrentioServer)
                     .keyboardType(.URL)
                     .textContentType(.URL)
                     .autocorrectionDisabled()
@@ -402,12 +402,12 @@ struct PickRulesView: View {
                     Button("Use the public server") { settings.torrentioServer = Torrentio.base }
                 }
                 NavigationLink {
-                    MultiSelectList(title: "Language Priority", options: TorrentioConfig.languageOptions, selection: $settings.priorityLanguages,
+                    MultiSelectList(title: "Language Priority", options: TorrentioConfig.languageOptions, selection: Bindable(settings).priorityLanguages,
                                     label: { $0.capitalized })
                 } label: {
                     LabeledContent("Language priority", value: settings.priorityLanguages.isEmpty ? "None" : settings.priorityLanguages.map(\.capitalized).joined(separator: ", "))
                 }
-                Picker("Results per quality", selection: $settings.perQualityLimit) {
+                Picker("Results per quality", selection: Bindable(settings).perQualityLimit) {
                     Text("All").tag(0)
                     ForEach([3, 5, 10, 20], id: \.self) { Text("\($0)").tag($0) }
                 }
@@ -424,14 +424,14 @@ struct PickRulesView: View {
 
     private func leaning(_ title: String, _ value: Binding<Leaning>) -> some View {
         Picker(title, selection: value) {
-            ForEach(Leaning.allCases) { Text($0.title).tag($0) }
+            ForEach(Leaning.allCases) { Text($0.title.localized).tag($0) }
         }
     }
 }
 
 /// Release groups whose releases come first within a quality.
 private struct GroupsList: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
     @State private var draft = ""
 
     var body: some View {

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 import UIKit
 
@@ -44,7 +45,8 @@ enum DownloadError: LocalizedError {
 /// while the app is closed. Files are excluded from iCloud backup: they are large and can be
 /// downloaded again.
 @MainActor
-final class DownloadStore: ObservableObject {
+@Observable
+final class DownloadStore {
     static let sessionIdentifier = "community.reel.app.downloads"
 
     /// What a download does beyond the file itself, read from the settings when it starts.
@@ -64,13 +66,13 @@ final class DownloadStore: ObservableObject {
         }
     }
 
-    @Published private(set) var items: [String: DownloadItem] = [:]
+    private(set) var items: [String: DownloadItem] = [:]
 
     /// Bytes a second for each running download, measured between progress reports.
-    @Published private(set) var speeds: [String: Double] = [:]
+    private(set) var speeds: [String: Double] = [:]
 
     /// Bytes the finished and partial files take, kept up to date rather than read on each use.
-    @Published private(set) var usedBytes: Int64 = 0
+    private(set) var usedBytes: Int64 = 0
 
     enum Event { case finished(DownloadItem), failed(DownloadItem, String) }
     /// Told when a download finishes or fails, so the app can say so.

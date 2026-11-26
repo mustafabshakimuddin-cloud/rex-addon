@@ -5,14 +5,14 @@ import AetherEngine
 /// narrow ones. Built from plain buttons rather than SwiftUI Menu, which the engine's author warns
 /// rebuilds while open under a ticking playback clock.
 struct OptionsPanel: View {
-    @EnvironmentObject private var settings: AppSettings
+    @Environment(AppSettings.self) private var settings
 
     enum Tab: String, CaseIterable, Identifiable, Equatable {
         case audio = "Audio", subtitles = "Subtitles", speed = "Speed", info = "Info"
         var id: String { rawValue }
     }
 
-    @ObservedObject var model: PlayerModel
+    var model: PlayerModel
     @State var tab: Tab
     let wide: Bool
     /// Looks for subtitles on OpenSubtitles for what is playing.
@@ -87,7 +87,7 @@ struct OptionsPanel: View {
     /// Night mode and the dialogue lift: for a quiet room, or speech lost under the music.
     private var listening: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(isOn: $settings.nightMode) {
+            Toggle(isOn: Bindable(settings).nightMode) {
                 Label("Night mode", systemImage: "moon.fill").font(.subheadline.weight(.semibold))
             }
             HStack {
@@ -107,7 +107,7 @@ struct OptionsPanel: View {
                 .buttonStyle(.glass)
                 .accessibilityLabel("More dialogue boost")
             }
-            Toggle(isOn: $settings.liftQuietSources) {
+            Toggle(isOn: Bindable(settings).liftQuietSources) {
                 Label("Lift quiet films", systemImage: "speaker.plus.fill").font(.subheadline.weight(.semibold))
             }
             if model.shapingState == .unavailable {
@@ -227,7 +227,7 @@ struct OptionsPanel: View {
                     .font(.title3)
                     .foregroundStyle(selected ? Theme.accent : .white.opacity(0.35))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.subheadline.weight(.semibold)).lineLimit(2)
+                    Text(title.localized).font(.subheadline.weight(.semibold)).lineLimit(2)
                     if let detail, !detail.isEmpty {
                         Text(detail).font(.caption).foregroundStyle(.white.opacity(0.62)).lineLimit(2)
                     }

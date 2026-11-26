@@ -4,13 +4,13 @@ import AetherEngine
 
 struct PlayerView: View {
     let session: PlayerSession
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var playback: PlaybackCenter
-    @EnvironmentObject private var trakt: TraktStore
+    @Environment(Library.self) private var library
+    @Environment(AppSettings.self) private var settings
+    @Environment(PlaybackCenter.self) private var playback
+    @Environment(TraktStore.self) private var trakt
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var model = PlayerModel()
+    @State private var model = PlayerModel()
     @State private var controlsVisible = true
     @State private var panel: OptionsPanel.Tab?
     @State private var scrubbing: Double?
@@ -623,7 +623,7 @@ struct PlayerView: View {
 
     private func barButton(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: symbol)
+            Label(title.localized, systemImage: symbol)
                 .font(.subheadline.weight(.semibold))
                 .labelStyle(AdaptiveLabelStyle(showsTitle: width >= 520))
         }

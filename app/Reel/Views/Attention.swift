@@ -67,7 +67,7 @@ struct Attention {
 /// Home's "Waiting on You" row: one glass card per item, each opening where it can be dealt with.
 struct AttentionStrip: View {
     let attention: Attention
-    @EnvironmentObject private var router: AppRouter
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         if !attention.items.isEmpty {
@@ -100,10 +100,10 @@ struct AttentionStrip: View {
                 .background(item.tint.opacity(0.15), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(item.title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text(item.title.localized).font(.subheadline.weight(.semibold)).lineLimit(1)
                     if item.needsYou { AttentionDot(size: 7) }
                 }
-                Text(item.detail).font(.caption).foregroundStyle(Theme.secondaryText).lineLimit(2)
+                Text(item.detail.localized).font(.caption).foregroundStyle(Theme.secondaryText).lineLimit(2)
                 if let progress = item.progress {
                     ProgressView(value: progress).tint(Theme.accent).padding(.top, 2)
                 }

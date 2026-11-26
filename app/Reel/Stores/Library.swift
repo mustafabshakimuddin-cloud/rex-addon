@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 struct PlaybackProgress: Codable, Hashable, Identifiable {
@@ -25,7 +26,8 @@ struct PlaybackProgress: Codable, Hashable, Identifiable {
 /// without publishing, so the screens behind the player don't redraw every ten seconds; they are
 /// published when the player closes (`commitLive`).
 @MainActor
-final class Library: ObservableObject {
+@Observable
+final class Library {
     nonisolated static let finishedFraction = 0.92
     nonisolated static let minimumResume: Double = 30
     /// Positions kept on disk; the oldest go first. Every episode ever opened would otherwise stay
@@ -33,36 +35,41 @@ final class Library: ObservableObject {
     nonisolated static let maximumEntries = 1500
     private static let fileVersion = 2
 
-    @Published private(set) var watchlist: [MediaItem] = [] { didSet { revision += 1 } }
-    private(set) var progress: [String: PlaybackProgress] = [:] { didSet { revision += 1 } }
+    private(set) var watchlist: [MediaItem] = [] { didSet { revision += 1 } }
+    // Positions, Trakt state and caches are not tracked one by one: views follow `changeCount`,
+    // which moves once per user-visible change, so positions recorded while the player is open
+    // (every ten seconds) don't redraw the screens behind it.
+    @ObservationIgnored private(set) var progress: [String: PlaybackProgress] = [:] { didSet { revision += 1 } }
     /// Watched on another device, as Trakt reports it: film IMDb ids and episode video ids, less
     /// those you marked unwatched here since.
-    private(set) var externalWatched: Set<String> = [] { didSet { revision += 1 } }
+    @ObservationIgnored private(set) var externalWatched: Set<String> = [] { didSet { revision += 1 } }
     /// Ids marked unwatched here while Trakt still listed them as watched, with when.
-    private var unwatchedOverrides: [String: Date] = [:]
+    @ObservationIgnored private var unwatchedOverrides: [String: Date] = [:]
     /// What Trakt's watchlist held at the last sync, to tell its removals from additions here.
-    private var traktWatchlist: Set<String>?
+    @ObservationIgnored private var traktWatchlist: Set<String>?
     /// Next episodes for Continue Watching, by series id.
-    private var upNext: [String: PlaybackProgress] = [:] { didSet { revision += 1 } }
+    @ObservationIgnored private var upNext: [String: PlaybackProgress] = [:] { didSet { revision += 1 } }
     /// Next episodes dismissed from Continue Watching, by series id; they don't come back.
-    private var dismissedUpNext: [String: String] = [:]
+    @ObservationIgnored private var dismissedUpNext: [String: String] = [:]
     /// Each series' aired regular episodes in order, learned from title pages and the player.
-    private var knownEpisodes: [String: [Episode]] = [:]
-    private var rawExternalWatched: Set<String> = []
+    @ObservationIgnored private var knownEpisodes: [String: [Episode]] = [:]
+    @ObservationIgnored private var rawExternalWatched: Set<String> = []
+    /// Moves once per change views should show.
+    private(set) var changeCount = 0
 
     /// Bumped on every change; derived lists are cached against it.
-    private(set) var revision = 0
+    @ObservationIgnored private(set) var revision = 0
 
     /// Told about each watchlist change the user makes here, so Trakt can follow.
-    var onWatchlistChange: ((MediaItem, Bool) -> Void)?
+    @ObservationIgnored var onWatchlistChange: ((MediaItem, Bool) -> Void)?
     /// Told when titles are marked watched (true) or unwatched (false) by hand.
-    var onWatchedChange: (([PlaybackTarget], Bool) -> Void)?
+    @ObservationIgnored var onWatchedChange: (([PlaybackTarget], Bool) -> Void)?
 
-    private var fileURL: URL
-    private var writer: SnapshotWriter
+    @ObservationIgnored private var fileURL: URL
+    @ObservationIgnored private var writer: SnapshotWriter
     /// Only family and animation titles in lists and rows: a kids profile.
-    @Published var kidsOnly = false
-    private var cache = Cache()
+    var kidsOnly = false
+    @ObservationIgnored private var cache = Cache()
 
     private struct Cache {
         var revision = -1
@@ -82,7 +89,7 @@ final class Library: ObservableObject {
         // The outgoing profile's file must be on disk before anything reads it again.
         saveNow()
         writer.waitUntilWritten()
-        objectWillChange.send()
+        changeCount &+= 1
         self.fileURL = fileURL
         writer = SnapshotWriter(url: fileURL)
         knownEpisodes = [:]
@@ -148,7 +155,7 @@ final class Library: ObservableObject {
         if let existing = progress[target.videoID] { item = existing.item }
         progress[target.videoID] = PlaybackProgress(item: item, episode: target.episode, position: duration * fraction,
                                                     duration: duration, updatedAt: date)
-        objectWillChange.send()
+        changeCount &+= 1
         scheduleSave(after: 2)
     }
 
@@ -159,7 +166,7 @@ final class Library: ObservableObject {
         unwatchedOverrides = unwatchedOverrides.filter { all.contains($0.key) }
         guard all != rawExternalWatched || externalWatched != all.subtracting(unwatchedOverrides.keys) else { return }
         rawExternalWatched = all
-        objectWillChange.send()
+        changeCount &+= 1
         externalWatched = all.subtracting(unwatchedOverrides.keys)
         refreshAllUpNext()
         scheduleSave(after: 2)
@@ -167,7 +174,7 @@ final class Library: ObservableObject {
 
     /// Forgets Trakt's state, when Trakt is disconnected.
     func forgetTraktState() {
-        objectWillChange.send()
+        changeCount &+= 1
         rawExternalWatched = []
         externalWatched = []
         unwatchedOverrides = [:]
@@ -180,6 +187,7 @@ final class Library: ObservableObject {
     /// The newest unfinished entry per title, most recent first, with the next episode of series
     /// whose latest episode you finished.
     var continueWatching: [PlaybackProgress] {
+        _ = changeCount
         refreshCache()
         if let cached = cache.continueWatching { return cached }
         var seen = Set<String>()
@@ -195,16 +203,26 @@ final class Library: ObservableObject {
         return list
     }
 
-    func progress(for target: PlaybackTarget) -> PlaybackProgress? { progress[target.videoID] }
+    func progress(for target: PlaybackTarget) -> PlaybackProgress? {
+        _ = changeCount
+        return progress[target.videoID]
+    }
 
     func resumePosition(for target: PlaybackTarget) -> Double? {
+        _ = changeCount
         guard let entry = progress[target.videoID], !entry.isFinished, entry.position >= Self.minimumResume else { return nil }
         return entry.position
     }
 
-    func isWatched(_ episode: Episode) -> Bool { progress[episode.id]?.isFinished ?? externalWatched.contains(episode.id) }
+    func isWatched(_ episode: Episode) -> Bool {
+        _ = changeCount
+        return progress[episode.id]?.isFinished ?? externalWatched.contains(episode.id)
+    }
 
-    func isWatched(_ target: PlaybackTarget) -> Bool { progress[target.videoID]?.isFinished ?? externalWatched.contains(target.videoID) }
+    func isWatched(_ target: PlaybackTarget) -> Bool {
+        _ = changeCount
+        return progress[target.videoID]?.isFinished ?? externalWatched.contains(target.videoID)
+    }
 
     /// A position from the player. With `live`, nothing is published until `commitLive()`.
     func record(_ target: PlaybackTarget, position: Double, duration: Double, live: Bool = false) {
@@ -214,7 +232,7 @@ final class Library: ObservableObject {
         trimOverflow()
         let entry = progress[target.videoID]
         if entry?.isFinished == true, !wasFinished { refreshUpNext(seriesID: target.item.id, item: target.item) }
-        if !live { objectWillChange.send() }
+        if !live { changeCount &+= 1 }
         // While playing, positions arrive every 10 s; the file only needs the last of a burst.
         // The player and the app's background transition both call saveNow() on the way out.
         scheduleSave(after: 5)
@@ -222,12 +240,12 @@ final class Library: ObservableObject {
 
     /// Publishes the positions recorded while the player was open.
     func commitLive() {
-        objectWillChange.send()
+        changeCount &+= 1
         saveNow()
     }
 
     func clearProgress(_ entry: PlaybackProgress) {
-        objectWillChange.send()
+        changeCount &+= 1
         if entry.isUpNext, let episode = entry.episode {
             upNext[entry.item.id] = nil
             dismissedUpNext[entry.item.id] = episode.id
@@ -239,6 +257,7 @@ final class Library: ObservableObject {
 
     /// Everything opened, most recent first: the History screen's timeline.
     var history: [PlaybackProgress] {
+        _ = changeCount
         refreshCache()
         if let cached = cache.history { return cached }
         let list = progress.values.sorted { $0.updatedAt > $1.updatedAt }
@@ -247,7 +266,7 @@ final class Library: ObservableObject {
     }
 
     func clearHistory() {
-        objectWillChange.send()
+        changeCount &+= 1
         progress = [:]
         upNext = [:]
         scheduleSave()
@@ -255,7 +274,7 @@ final class Library: ObservableObject {
 
     /// Marks a film or episode as seen without playing it.
     func markWatched(_ target: PlaybackTarget) {
-        objectWillChange.send()
+        changeCount &+= 1
         let duration = max(progress[target.videoID]?.duration ?? 0, 60)
         progress[target.videoID] = PlaybackProgress(item: target.item, episode: target.episode, position: duration,
                                                     duration: duration, updatedAt: Date(), marked: true)
@@ -271,7 +290,7 @@ final class Library: ObservableObject {
     }
 
     func markWatched(_ episodes: [Episode], of item: MediaItem) {
-        objectWillChange.send()
+        changeCount &+= 1
         let now = Date()
         let aired = episodes.filter(\.hasAired)
         for (offset, episode) in aired.enumerated() {
@@ -294,7 +313,7 @@ final class Library: ObservableObject {
 
     private func markUnwatched(_ targets: [PlaybackTarget]) {
         guard !targets.isEmpty else { return }
-        objectWillChange.send()
+        changeCount &+= 1
         let now = Date()
         for target in targets {
             progress[target.videoID] = nil
@@ -311,6 +330,7 @@ final class Library: ObservableObject {
     /// The furthest regular episode of a series you've finished or started here, or that Trakt
     /// says you watched, as (season, episode).
     func furthestEpisode(inSeries seriesID: String) -> (Int, Int)? {
+        _ = changeCount
         refreshCache()
         if let furthest = cache.furthest { return furthest[seriesID] }
         // One pass over everything, for every series at once: New Episodes asks for each series.
@@ -333,6 +353,7 @@ final class Library: ObservableObject {
     /// The episode to offer next: the one after the latest watched, or the first. Episodes that
     /// haven't aired are never offered; nil means you're caught up (or nothing has aired).
     func nextEpisode(in detail: MediaDetail) -> Episode? {
+        _ = changeCount
         let regular = detail.episodes.filter { $0.season > 0 }.sorted { ($0.season, $0.number) < ($1.season, $1.number) }
         let latest = regular.lastIndex { progress[$0.id] != nil || externalWatched.contains($0.id) }
         guard let latest else { return regular.first(where: \.hasAired) }
@@ -364,7 +385,7 @@ final class Library: ObservableObject {
         let before = upNext[detail.item.id]
         refreshUpNext(seriesID: detail.item.id, item: item)
         if upNext[detail.item.id] != before {
-            objectWillChange.send()
+            changeCount &+= 1
             scheduleSave()
         }
     }
@@ -477,7 +498,7 @@ final class Library: ObservableObject {
     /// Replaces the library with a backup's. Throws when the data isn't a library.
     func importData(_ data: Data) throws {
         let saved = try JSONDecoder().decode(Saved.self, from: data)
-        objectWillChange.send()
+        changeCount &+= 1
         watchlist = saved.watchlist
         progress = saved.progress
         rawExternalWatched = saved.externalWatched

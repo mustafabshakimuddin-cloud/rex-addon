@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Combine
 
 /// Checks the key the way playback will use it, without changing the account: the service's own
@@ -78,10 +79,11 @@ struct HealthCheck: Identifiable, Hashable {
 /// Runs every check at once, each with its own time limit, so one slow service never holds up
 /// the page.
 @MainActor
-final class HealthModel: ObservableObject {
-    @Published private(set) var checks: [HealthCheck] = []
-    @Published private(set) var isRunning = false
-    @Published private(set) var ranAt: Date?
+@Observable
+final class HealthModel {
+    private(set) var checks: [HealthCheck] = []
+    private(set) var isRunning = false
+    private(set) var ranAt: Date?
 
     var worst: HealthCheck.Level { checks.map(\.level).max() ?? .ok }
     var problemCount: Int { checks.filter { $0.level == .problem }.count }

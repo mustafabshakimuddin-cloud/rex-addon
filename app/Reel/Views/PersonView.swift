@@ -3,12 +3,13 @@ import SwiftUI
 // MARK: - People
 
 @MainActor
-final class PersonModel: ObservableObject {
-    @Published var movies: [MediaItem] = []
-    @Published var series: [MediaItem] = []
-    @Published var directed: Set<String> = []
-    @Published var isLoading = false
-    @Published var error: String?
+@Observable
+final class PersonModel {
+    var movies: [MediaItem] = []
+    var series: [MediaItem] = []
+    var directed: Set<String> = []
+    var isLoading = false
+    var error: String?
     private var loaded = ""
 
     func load(_ name: String) async {
@@ -109,11 +110,11 @@ struct PersonPhoto: View {
 /// Known For and Filmography for a name; used by the person page and Search's People scope.
 struct PersonResults: View {
     let name: String
-    @EnvironmentObject private var library: Library
-    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(Library.self) private var library
+    @Environment(DownloadStore.self) private var downloads
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
-    @StateObject private var model = PersonModel()
+    @State private var model = PersonModel()
 
     var body: some View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
