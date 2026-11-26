@@ -287,7 +287,9 @@ jobs:
               elif ! printf '%s\n' "$RUNNING" | grep -q community.reel.app; then
                 echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"
                 CRASHES="$CRASHES $NAME/$SCREEN"
-                limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
+                limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | grep -v "compose failure" | tail -40 || true
+                REPORT=$(ls -t ~/Library/Logs/DiagnosticReports/Reel*.ips 2>/dev/null | head -1)
+                if [ -n "$REPORT" ]; then python3 tools/crash_summary.py "$REPORT" || true; rm -f "$REPORT"; fi
               fi
               # A freshly booted Duo may not answer the display probe; ask again once it's up.
               if [ "$DISPLAYS" = "default" ]; then

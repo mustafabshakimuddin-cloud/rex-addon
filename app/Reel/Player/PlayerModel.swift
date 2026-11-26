@@ -4,6 +4,7 @@ import CoreGraphics
 import AVKit
 import Combine
 import MediaPlayer
+import UIKit
 import AetherEngine
 
 /// One AetherEngine for the app's lifetime, as its author requires: hosts call `load(url:)` for each
@@ -194,7 +195,7 @@ final class PlayerModel {
             Task {
                 guard let image = await ImageLoader.shared.image(for: artwork, maxPixelSize: 600) else { return }
                 var withArtwork = base
-                withArtwork[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                withArtwork[MPMediaItemPropertyArtwork] = Self.artwork(image)
                 engine.setNowPlayingInfo(withArtwork)
             }
         }
@@ -216,6 +217,13 @@ final class PlayerModel {
                 errorMessage = Self.message(for: error)
             }
         }
+    }
+
+    /// The lock screen's picture. MediaPlayer asks for it on its own queue, so the closure must
+    /// not belong to the main actor, as one written inside `start` would; under Swift 6 that
+    /// stopped the app as soon as the picture loaded.
+    nonisolated private static func artwork(_ image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     /// Opens a fresh address for the same file at the same place, after a link expired.
