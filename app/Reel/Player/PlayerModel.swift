@@ -100,6 +100,8 @@ final class PlayerModel: ObservableObject {
     @Published private(set) var sleepFired = false
     /// Being held for double speed.
     @Published private(set) var boosted = false
+    /// Whether night mode and the dialogue lift are reaching the speakers.
+    @Published private(set) var shapingState: AudioShapingState = .off
 
     enum SleepTimer: Equatable {
         case at(Date)
@@ -140,6 +142,7 @@ final class PlayerModel: ObservableObject {
         engine.$videoFormat.removeDuplicates().sink { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
         engine.$hasFirstFrameReadyForDisplay.removeDuplicates().sink { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
         engine.$mediaChapters.removeDuplicates().sink { [weak self] in self?.chapters = $0 }.store(in: &bag)
+        engine.$audioShapingState.removeDuplicates().sink { [weak self] in self?.shapingState = $0 }.store(in: &bag)
         engine.$playbackPhase.removeDuplicates().sink { [weak self] phase in
             guard let self, self.hasFirstFrame, case .rebuffering = phase else { return }
             self.stallCount += 1
@@ -169,7 +172,7 @@ final class PlayerModel: ObservableObject {
 
     func start(url: URL, title: String, subtitle: String?, startAt: Double?,
                audioLanguages: [String], subtitleLanguages: [String], artwork: URL? = nil,
-               localSubtitles: [URL] = [],
+               localSubtitles: [URL] = [], audioShaping: AudioShaping = AudioShaping(),
                onProgress: @escaping (Double, Double) -> Void) {
         guard !started, let engine else { return }
         started = true
@@ -179,6 +182,7 @@ final class PlayerModel: ObservableObject {
         var options = LoadOptions()
         options.preferredAudioLanguages = audioLanguages
         options.preferredSubtitleLanguages = subtitleLanguages
+        options.audioShaping = audioShaping
         loadOptions = options
         var info: [String: Any] = [MPMediaItemPropertyTitle: title]
         if let subtitle { info[MPMediaItemPropertyArtist] = subtitle }
@@ -327,6 +331,13 @@ final class PlayerModel: ObservableObject {
     }
 
     func selectAudio(_ track: TrackInfo) { engine?.selectAudioTrack(index: track.id) }
+
+    /// Night mode, the dialogue lift and the loudness lift, applied to the running session (the
+    /// engine rebuilds at the playhead, about a third of a second) and to any reload after.
+    func setAudioShaping(_ shaping: AudioShaping) {
+        loadOptions.audioShaping = shaping
+        engine?.setAudioShaping(shaping)
+    }
 
     // MARK: Subtitles
 

@@ -131,12 +131,12 @@ struct TorrentioConfig: Equatable {
 enum Torrentio {
     static let base = "https://torrentio.strem.fun"
 
-    static func streams(kind: MediaKind, videoID: String, config: TorrentioConfig) async throws -> [StreamSource] {
+    static func streams(kind: MediaKind, videoID: String, config: TorrentioConfig, label: String = "Torrentio") async throws -> [StreamSource] {
         let segment = config.pathSegment
         let configPart = segment.isEmpty ? "" : "/" + (segment.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? segment)
         let id = videoID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/:"))) ?? videoID
         let url = try HTTP.url("\(config.serverBase)\(configPart)/stream/\(kind.rawValue)/\(id).json")
-        return try await StremioStreams.fetch(url, addon: "Torrentio")
+        return try await StremioStreams.fetch(url, addon: label)
     }
 
     /// Torrentio's `/resolve/` links (and the playback links of other addons) make the debrid

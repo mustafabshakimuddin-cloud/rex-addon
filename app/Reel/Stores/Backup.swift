@@ -15,7 +15,7 @@ enum Backup {
     /// UserDefaults keys that belong in a backup: settings and layout, never keys or tokens
     /// (those are in the Keychain) and nothing tied to this device's state.
     private static let prefixes = [
-        "debrid.service", "torrentio.", "player.", "playback.", "sources.", "subtitles.", "appearance.", "home.",
+        "debrid.service", "debrid.secondaryService", "torrentio.", "player.", "playback.", "sources.", "subtitles.", "appearance.", "home.",
         "prefer.", "downloads.", "notify.", "browse.", "explore.", "library.", "search.", "setup.",
     ]
 

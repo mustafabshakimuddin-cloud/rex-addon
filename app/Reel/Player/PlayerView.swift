@@ -63,6 +63,7 @@ struct PlayerView: View {
         .onChange(of: model.hasFirstFrame) { _, ready in if ready { started() } }
         .onChange(of: model.errorMessage) { _, message in if let message { failed(message) } }
         .onChange(of: model.stallCount) { _, _ in playback.playerStalled(session) }
+        .onChange(of: settings.audioShaping) { _, shaping in model.setAudioShaping(shaping) }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             model.restoreAfterBackground()
@@ -302,7 +303,9 @@ struct PlayerView: View {
             subtitleLanguages: subtitles,
             artwork: target.episode?.thumbnail ?? target.item.poster,
             localSubtitles: session.localSubtitles,
-            onProgress: { [weak lib = library] position, duration in
+            audioShaping: settings.audioShaping,
+            onProgress: { [weak lib = library, isCloud = session.isCloud] position, duration in
+                guard !isCloud else { return }
                 lib?.record(target, position: position, duration: duration, live: true)
             }
         )
@@ -379,7 +382,7 @@ struct PlayerView: View {
 
     /// What the viewer picked here, for the next episode or the next time.
     private func rememberChoices() {
-        guard model.hasFirstFrame else { return }
+        guard model.hasFirstFrame, !session.isCloud else { return }
         let audio = model.audioTracks.first { $0.id == model.activeAudio }?.language
         // "Off" is remembered only when subtitles would otherwise have come on by themselves.
         let wouldAutoplay = settings.autoplaySubtitles
@@ -453,6 +456,7 @@ struct PlayerView: View {
     }
 
     private func scrobble(_ action: Trakt.ScrobbleAction) {
+        guard !session.isCloud else { return }
         trakt.scrobble(action, target: session.target, position: model.currentTime, duration: model.duration)
     }
 

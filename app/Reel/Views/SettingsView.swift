@@ -8,6 +8,8 @@ struct SettingsView: View {
     @EnvironmentObject private var router: AppRouter
     @State private var confirmForget = false
     @State private var keyDraft = ""
+    @State private var secondKeyDraft = ""
+    @State private var secondTest: TestState = .idle
     @State private var testState: TestState = .idle
 
     enum TestState: Equatable { case idle, testing, ok(String), failed(String) }
@@ -73,6 +75,39 @@ struct SettingsView: View {
                 Text("Streams play through your debrid account: the release is fetched by the service and streamed to you over HTTPS. The key is stored in this device's Keychain.")
             }
 
+            if settings.isDebridConfigured {
+                Section {
+                    Picker("Second service", selection: $settings.secondaryService) {
+                        ForEach(DebridService.allCases.filter { $0 != settings.debridService }) { Text($0.name).tag($0) }
+                    }
+                    if settings.secondaryService != .none {
+                        SecureField("API key", text: $secondKeyDraft)
+                            .textContentType(.password)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .onSubmit { settings.secondaryKey = secondKeyDraft }
+                        HStack {
+                            Button("Save and Test") {
+                                settings.secondaryKey = secondKeyDraft
+                                Task { await testSecond() }
+                            }
+                            .disabled(secondKeyDraft.trimmingCharacters(in: .whitespaces).isEmpty || secondTest == .testing)
+                            Spacer()
+                            switch secondTest {
+                            case .idle: EmptyView()
+                            case .testing: ProgressView()
+                            case let .ok(text): Label(text, systemImage: "checkmark.circle.fill").foregroundStyle(Theme.cached).font(.footnote)
+                            case let .failed(text): Label(text, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.footnote).lineLimit(2)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Second Debrid Service")
+                } footer: {
+                    Text("Optional. Torrentio is asked through both, and releases only the second has cached are added to the list. Useful when one service lacks a title the other has.")
+                }
+            }
+
             Section {
                 Toggle("Play the best source automatically", isOn: $settings.autoPlayBest)
                 NavigationLink(value: SettingsPage.pickRules) {
@@ -128,10 +163,16 @@ struct SettingsView: View {
                     ForEach(Languages.options.filter { !$0.0.isEmpty }, id: \.0) { Text($0.1).tag($0.0) }
                 }
                 Toggle("Find subtitles online when missing", isOn: $settings.searchOnlineSubtitles)
+                Toggle("Night mode", isOn: $settings.nightMode)
+                Picker("Dialogue boost", selection: $settings.dialogueBoostDB) {
+                    Text("Off").tag(0.0)
+                    ForEach([3.0, 6.0, 9.0, 12.0], id: \.self) { Text("+\(Int($0)) dB").tag($0) }
+                }
+                Toggle("Lift quiet films", isOn: $settings.liftQuietSources)
             } header: {
                 Text("Player")
             } footer: {
-                Text("The audio language is chosen as the stream opens, so the right track starts straight away. Multichannel and Dolby Atmos tracks play in Spatial Audio on supported headphones. Missing subtitles come from OpenSubtitles.")
+                Text("The audio language is chosen as the stream opens, so the right track starts straight away. Multichannel and Dolby Atmos tracks play in Spatial Audio on supported headphones. Missing subtitles come from OpenSubtitles. Night mode narrows the gap between whispers and explosions; the dialogue boost raises speech; lifting quiet films evens out releases mixed low. While any of them is on, Atmos plays without its height channels.")
             }
 
             Section("Subtitle Appearance") {
@@ -212,7 +253,10 @@ struct SettingsView: View {
             case .backup: BackupView()
             }
         }
-        .onAppear { keyDraft = settings.debridKey }
+        .onAppear {
+            keyDraft = settings.debridKey
+            secondKeyDraft = settings.secondaryKey
+        }
         .onChange(of: settings.debridService) { _, _ in testState = .idle }
     }
 
@@ -264,6 +308,15 @@ struct SettingsView: View {
             testState = .ok(pass.summary)
             settings.debridAccount = pass.account
         case let .failure(error): testState = .failed(error.localizedDescription)
+        }
+    }
+
+    private func testSecond() async {
+        guard let config = settings.secondaryTorrentio else { secondTest = .failed("Enter a key first."); return }
+        secondTest = .testing
+        switch await DebridCheck.run(config) {
+        case let .success(pass): secondTest = .ok(pass.summary)
+        case let .failure(error): secondTest = .failed(error.localizedDescription)
         }
     }
 

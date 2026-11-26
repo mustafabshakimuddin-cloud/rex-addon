@@ -11,7 +11,7 @@ enum SettingsPage: Hashable {
 
 /// Pages that hang off Library, and that Home's "Waiting on You" cards open.
 enum LibraryPage: Hashable {
-    case downloads, history
+    case downloads, history, cloud
 }
 
 /// A cast or crew member's page.
@@ -139,6 +139,7 @@ extension View {
                 switch page {
                 case .downloads: DownloadsView()
                 case .history: HistoryView()
+                case .cloud: DebridCloudView()
                 }
             }
     }

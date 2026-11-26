@@ -5,6 +5,8 @@ import AetherEngine
 /// narrow ones. Built from plain buttons rather than SwiftUI Menu, which the engine's author warns
 /// rebuilds while open under a ticking playback clock.
 struct OptionsPanel: View {
+    @EnvironmentObject private var settings: AppSettings
+
     enum Tab: String, CaseIterable, Identifiable, Equatable {
         case audio = "Audio", subtitles = "Subtitles", speed = "Speed", info = "Info"
         var id: String { rawValue }
@@ -52,6 +54,7 @@ struct OptionsPanel: View {
     }
 
     @ViewBuilder private var audioList: some View {
+        listening
         if model.audioTracks.isEmpty {
             empty("No audio tracks reported yet.")
         }
@@ -79,6 +82,43 @@ struct OptionsPanel: View {
             }
         }
         onlineSection
+    }
+
+    /// Night mode and the dialogue lift: for a quiet room, or speech lost under the music.
+    private var listening: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $settings.nightMode) {
+                Label("Night mode", systemImage: "moon.fill").font(.subheadline.weight(.semibold))
+            }
+            HStack {
+                Label("Dialogue", systemImage: "person.wave.2.fill").font(.subheadline.weight(.semibold))
+                Spacer()
+                Button { settings.dialogueBoostDB = max(0, settings.dialogueBoostDB - 3) } label: {
+                    Image(systemName: "minus").frame(width: 16, height: 16)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("Less dialogue boost")
+                Text(settings.dialogueBoostDB == 0 ? "Off" : "+\(Int(settings.dialogueBoostDB)) dB")
+                    .font(.subheadline.weight(.bold).monospacedDigit())
+                    .frame(minWidth: 54)
+                Button { settings.dialogueBoostDB = min(AudioShaping.maxDialogueGainDB, settings.dialogueBoostDB + 3) } label: {
+                    Image(systemName: "plus").frame(width: 16, height: 16)
+                }
+                .buttonStyle(.glass)
+                .accessibilityLabel("More dialogue boost")
+            }
+            Toggle(isOn: $settings.liftQuietSources) {
+                Label("Lift quiet films", systemImage: "speaker.plus.fill").font(.subheadline.weight(.semibold))
+            }
+            if model.shapingState == .unavailable {
+                Text("Not available on this audio route; it applies to the next stream that can carry it.")
+                    .font(.caption).foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .tint(Theme.accent)
+        .padding(12)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.bottom, 6)
     }
 
     /// Nudges the subtitles against the picture when a file's timing is off.
@@ -170,7 +210,7 @@ struct OptionsPanel: View {
     @ViewBuilder private var footer: some View {
         switch tab {
         case .audio:
-            Text("Multichannel and Dolby Atmos tracks play in Spatial Audio with AirPods and other supported headphones. Changing track reopens the stream for a moment.")
+            Text("Multichannel and Dolby Atmos tracks play in Spatial Audio with AirPods and other supported headphones. Changing track reopens the stream for a moment. Night mode and the dialogue and loudness lifts decode the audio to shape it, so while one is on Dolby Atmos plays as surround without its height channels.")
                 .font(.caption2).foregroundStyle(.white.opacity(0.6))
         case .info:
             Text("Updates every second. HDR is easiest to judge in a bright scene, such as daylight or a lamp in shot.")

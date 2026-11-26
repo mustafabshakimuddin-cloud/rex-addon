@@ -72,6 +72,12 @@ struct PlaybackInfoView: View {
                     if let fps = live.observedFps { line("Frames shown", String(format: "%.1f fps", fps)) }
                     if let dropped = live.droppedFrameCount { line("Dropped frames", "\(dropped)") }
                     if let mbps = live.networkThroughputMbps { line("Network", String(format: "%.1f Mb/s", mbps)) }
+                    if let mbps = live.averageBitrateMbps { line("Video bitrate", String(format: "%.1f Mb/s average", mbps)) }
+                    else if let mbps = live.instantBitrateMbps { line("Video bitrate", String(format: "%.1f Mb/s", mbps)) }
+                    if let gap = live.avSyncGapMs { line("Audio sync", String(format: "%+.0f ms", gap)) }
+                    if let cached = live.cachedBytes, cached > 0 {
+                        line("Cached", ByteCountFormatter.string(fromByteCount: cached, countStyle: .file))
+                    }
                     if let ahead = live.forwardBufferSeconds { line("Buffered ahead", String(format: "%.0f s", ahead)) }
                 }
             }

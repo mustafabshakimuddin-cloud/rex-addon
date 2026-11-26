@@ -283,6 +283,15 @@ enum Addons {
 struct SourceQuery: Sendable, Equatable {
     var torrentio: TorrentioConfig
     var addons: [StreamAddon]
+    /// A second debrid service, searched alongside the first; its releases fill in what the first
+    /// hasn't cached.
+    var secondary: TorrentioConfig?
+
+    init(torrentio: TorrentioConfig, addons: [StreamAddon], secondary: TorrentioConfig? = nil) {
+        self.torrentio = torrentio
+        self.addons = addons
+        self.secondary = secondary
+    }
 }
 
 enum SourceFinder {
@@ -297,15 +306,27 @@ enum SourceFinder {
                 do { return (0, .success(try await Torrentio.streams(kind: kind, videoID: videoID, config: query.torrentio))) }
                 catch { return (0, .failure(error)) }
             }
+            // The second service comes right after the first, ahead of the addons: the merge keeps
+            // the first copy of a file, and a cached copy replaces one that isn't.
+            if let secondary = query.secondary, secondary.hasDebrid {
+                group.addTask {
+                    do {
+                        let label = "Torrentio · \(secondary.service.name)"
+                        return (1, .success(try await Torrentio.streams(kind: kind, videoID: videoID, config: secondary, label: label)))
+                    } catch {
+                        return (1, .failure(error))
+                    }
+                }
+            }
             for (offset, addon) in addons.enumerated() {
                 group.addTask {
                     do {
                         let streams = try await withTimeout(seconds: 20) {
                             try await Addons.streams(from: addon, kind: kind, videoID: videoID)
                         }
-                        return (offset + 1, .success(streams))
+                        return (offset + 2, .success(streams))
                     } catch {
-                        return (offset + 1, .failure(error))
+                        return (offset + 2, .failure(error))
                     }
                 }
             }

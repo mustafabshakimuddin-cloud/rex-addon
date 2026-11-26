@@ -140,6 +140,9 @@ final class HealthModel: ObservableObject {
         let torrentioURL = "\(config.serverBase)/manifest.json"
         await withTaskGroup(of: HealthCheck?.self) { group in
             group.addTask { await self.debridCheck(config, settings: settings) }
+            if let second = settings.secondaryTorrentio {
+                group.addTask { await self.debridCheck(second, settings: settings, primary: false) }
+            }
             group.addTask {
                 await self.reachCheck(id: "cinemeta", title: "Catalogue", systemImage: "square.grid.2x2",
                                       url: "https://v3-cinemeta.strem.io/manifest.json", service: "Cinemeta")
@@ -209,24 +212,25 @@ final class HealthModel: ObservableObject {
                            fix: .settings(.pickRules), fixTitle: "Pick Rules")
     }
 
-    private func debridCheck(_ config: TorrentioConfig, settings: AppSettings) async -> HealthCheck? {
+    private func debridCheck(_ config: TorrentioConfig, settings: AppSettings, primary: Bool = true) async -> HealthCheck? {
         guard config.hasDebrid else { return nil }
+        let id = primary ? "debrid" : "debrid2"
         let result = await DebridCheck.run(config)
         switch result {
         case let .success(pass):
-            settings.debridAccount = pass.account
+            if primary { settings.debridAccount = pass.account }
             var detail = "Key accepted; instant sources found."
             if let account = pass.account, let expires = account.expires {
                 detail += " Plan ends \(expires.formatted(date: .abbreviated, time: .omitted))."
             }
             if let days = pass.account?.daysLeft, days <= 7 {
-                return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .warning,
+                return HealthCheck(id: id, title: config.service.name, systemImage: "key", level: .warning,
                                    detail: detail, advice: "Renew the plan, or streams stop when it ends.",
                                    fix: config.service.accountPage.map(HealthCheck.Fix.link), fixTitle: "Renew")
             }
-            return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .ok, detail: detail)
+            return HealthCheck(id: id, title: config.service.name, systemImage: "key", level: .ok, detail: detail)
         case let .failure(error):
-            return HealthCheck(id: "debrid", title: config.service.name, systemImage: "key", level: .problem,
+            return HealthCheck(id: id, title: config.service.name, systemImage: "key", level: .problem,
                                detail: Redact.text(error.localizedDescription),
                                advice: "Check the API key in Settings. If it is right, the service may be down or your plan may have ended.",
                                fix: config.service.keyPage.map(HealthCheck.Fix.link) ?? .settingsHome,

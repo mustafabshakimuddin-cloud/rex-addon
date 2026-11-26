@@ -125,6 +125,11 @@ struct LibraryView: View {
                 let next = upcoming.upcoming.first
                 linkTile("Calendar", detail: next.map { "Next: \($0.item.name)" } ?? "Upcoming episodes", systemImage: "calendar")
             }
+            if settings.isDebridConfigured && DebridCloud.supports(settings.debridService) {
+                NavigationLink(value: LibraryPage.cloud) {
+                    linkTile("\(settings.debridService.name) Files", detail: "What's in your account", systemImage: "icloud.and.arrow.down")
+                }
+            }
             if !downloads.items.isEmpty {
                 NavigationLink(value: LibraryPage.downloads) {
                     linkTile("Offline", detail: downloadDetail, systemImage: "arrow.down.circle.fill", dot: failed)

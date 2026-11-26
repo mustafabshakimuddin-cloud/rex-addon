@@ -15,6 +15,9 @@ struct PlayerSession: Identifiable, Equatable {
     var isLocal = false
     /// A downloaded subtitle file to add as a track, for offline copies.
     var localSubtitles: [URL] = []
+    /// A file from the debrid account's own list: not a catalogue title, so it leaves no history,
+    /// resume point or Trakt scrobble behind.
+    var isCloud = false
 }
 
 /// Turns "play this" into a running player: find sources across Torrentio and the user's addons,
@@ -256,6 +259,19 @@ final class PlaybackCenter: ObservableObject {
                 AppLog.record("Play \(target.displayTitle)", error)
             }
         }
+    }
+
+    /// Plays a file straight from the debrid account's list.
+    func playCloudFile(name: String, size: Int64, url: URL) {
+        let item = MediaItem(id: "cloud:\(url.lastPathComponent)", kind: .movie, name: name)
+        let source = StreamSource(id: url.absoluteString, addon: "Debrid", addonHost: nil,
+                                  quality: StremioStreams.RawStream.quality(nameLines: [], haystack: name),
+                                  tags: StremioStreams.RawStream.tags(nameLines: [], haystack: name), release: name,
+                                  file: nil, size: size > 0 ? ByteCountFormatter.string(fromByteCount: size, countStyle: .file) : nil,
+                                  sizeBytes: Double(size), seeders: nil, provider: nil, languages: nil, debridTag: nil,
+                                  cached: true, url: url, infoHash: nil, fileIndex: nil, bingeGroup: nil)
+        errorMessage = nil
+        session = PlayerSession(target: PlaybackTarget(item: item), url: url, source: source, startAt: nil, isLocal: true, isCloud: true)
     }
 
     /// Resolves candidates in order until one gives an address, then presents the player with the

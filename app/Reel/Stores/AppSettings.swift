@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AVFoundation
 import VideoToolbox
+import AetherEngine
 
 @MainActor
 final class AppSettings: ObservableObject {
@@ -9,6 +10,9 @@ final class AppSettings: ObservableObject {
 
     @Published var debridService: DebridService { didSet { defaults.set(debridService.rawValue, forKey: Keys.service) } }
     @Published var debridKey: String { didSet { Keychain.write(debridKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keys.debridKey) } }
+    /// A second debrid service whose cached releases fill in what the first hasn't got.
+    @Published var secondaryService: DebridService { didSet { defaults.set(secondaryService.rawValue, forKey: Keys.secondaryService) } }
+    @Published var secondaryKey: String { didSet { Keychain.write(secondaryKey.trimmingCharacters(in: .whitespacesAndNewlines), for: Keys.secondaryKey) } }
     @Published var providers: [String] { didSet { defaults.set(providers, forKey: Keys.providers) } }
     @Published var excludedQualities: [String] { didSet { defaults.set(excludedQualities, forKey: Keys.excluded) } }
     @Published var sort: TorrentioSort { didSet { defaults.set(sort.rawValue, forKey: Keys.sort) } }
@@ -47,6 +51,18 @@ final class AppSettings: ObservableObject {
     /// Skip intros and recaps without a tap, when the file's chapters name them.
     @Published var autoSkipIntro: Bool { didSet { defaults.set(autoSkipIntro, forKey: Keys.autoSkipIntro) } }
     @Published var autoSkipRecap: Bool { didSet { defaults.set(autoSkipRecap, forKey: Keys.autoSkipRecap) } }
+    /// Night mode: loud scenes come down and quiet ones up, for late evenings and thin walls.
+    @Published var nightMode: Bool { didSet { defaults.set(nightMode, forKey: Keys.nightMode) } }
+    /// Extra level on the dialogue, in dB (0 is off).
+    @Published var dialogueBoostDB: Double { didSet { defaults.set(dialogueBoostDB, forKey: Keys.dialogueBoost) } }
+    /// Raise sources mixed quietly to a common loudness.
+    @Published var liftQuietSources: Bool { didSet { defaults.set(liftQuietSources, forKey: Keys.liftQuiet) } }
+
+    /// The engine's audio shaping for these settings; inactive when all are off.
+    var audioShaping: AudioShaping {
+        AudioShaping(dialogueGainDB: dialogueBoostDB, compressor: nightMode ? .night : nil,
+                     loudnessTargetLUFS: liftQuietSources ? -16 : nil)
+    }
 
     // MARK: Torrentio
     @Published var torrentioServer: String { didSet { defaults.set(torrentioServer, forKey: Keys.torrentioServer) } }
@@ -109,6 +125,8 @@ final class AppSettings: ObservableObject {
     init() {
         debridService = DebridService(rawValue: defaults.string(forKey: Keys.service) ?? "") ?? .none
         debridKey = Keychain.read(Keys.debridKey) ?? ""
+        secondaryService = DebridService(rawValue: defaults.string(forKey: Keys.secondaryService) ?? "") ?? .none
+        secondaryKey = Keychain.read(Keys.secondaryKey) ?? ""
         providers = defaults.stringArray(forKey: Keys.providers) ?? []
         excludedQualities = defaults.stringArray(forKey: Keys.excluded) ?? ["scr", "cam"]
         sort = TorrentioSort(rawValue: defaults.string(forKey: Keys.sort) ?? "") ?? .quality
@@ -132,6 +150,9 @@ final class AppSettings: ObservableObject {
         autoPlayNext = defaults.object(forKey: Keys.autoPlayNext) as? Bool ?? true
         autoSkipIntro = defaults.object(forKey: Keys.autoSkipIntro) as? Bool ?? false
         autoSkipRecap = defaults.object(forKey: Keys.autoSkipRecap) as? Bool ?? false
+        nightMode = defaults.object(forKey: Keys.nightMode) as? Bool ?? false
+        dialogueBoostDB = defaults.object(forKey: Keys.dialogueBoost) as? Double ?? 0
+        liftQuietSources = defaults.object(forKey: Keys.liftQuiet) as? Bool ?? false
         torrentioServer = defaults.string(forKey: Keys.torrentioServer) ?? Torrentio.base
         priorityLanguages = defaults.stringArray(forKey: Keys.priorityLanguages) ?? []
         perQualityLimit = defaults.object(forKey: Keys.perQualityLimit) as? Int ?? 0
@@ -212,7 +233,9 @@ final class AppSettings: ObservableObject {
     var downloadQuery: SourceQuery {
         var config = torrentio
         if downloadMaxSizeGB > 0 { config.maxSizeGB = config.maxSizeGB > 0 ? min(config.maxSizeGB, downloadMaxSizeGB) : downloadMaxSizeGB }
-        return SourceQuery(torrentio: config, addons: addons)
+        var secondary = secondaryTorrentio
+        secondary?.maxSizeGB = config.maxSizeGB
+        return SourceQuery(torrentio: config, addons: addons, secondary: secondary)
     }
 
     var isDebridConfigured: Bool { torrentio.hasDebrid }
@@ -220,11 +243,22 @@ final class AppSettings: ObservableObject {
     /// Torrentio needs a debrid service to give playable links; an addon may not.
     var canFindSources: Bool { isDebridConfigured || addons.contains(where: \.enabled) }
 
-    var sourceQuery: SourceQuery { SourceQuery(torrentio: torrentio, addons: addons) }
+    var sourceQuery: SourceQuery { SourceQuery(torrentio: torrentio, addons: addons, secondary: secondaryTorrentio) }
+
+    /// The first service's rules with the second service's key, when one is set and differs.
+    var secondaryTorrentio: TorrentioConfig? {
+        guard secondaryService != .none, secondaryService != debridService else { return nil }
+        var config = torrentio
+        config.service = secondaryService
+        config.key = secondaryKey
+        return config.hasDebrid ? config : nil
+    }
 
     private enum Keys {
         static let service = "debrid.service"
         static let debridKey = "debrid.key"
+        static let secondaryService = "debrid.secondaryService"
+        static let secondaryKey = "debrid.secondaryKey"
         static let providers = "torrentio.providers"
         static let excluded = "torrentio.excludedQualities"
         static let sort = "torrentio.sort"
@@ -255,6 +289,9 @@ final class AppSettings: ObservableObject {
         static let recentSearches = "search.recent"
         static let autoSkipIntro = "player.autoSkipIntro"
         static let autoSkipRecap = "player.autoSkipRecap"
+        static let nightMode = "player.nightMode"
+        static let dialogueBoost = "player.dialogueBoost"
+        static let liftQuiet = "player.liftQuiet"
         static let torrentioServer = "torrentio.server"
         static let priorityLanguages = "torrentio.languages"
         static let perQualityLimit = "torrentio.limit"
