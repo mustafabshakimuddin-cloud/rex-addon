@@ -136,36 +136,36 @@ final class PlayerModel {
         }
         // Every assignment to a @Published property redraws the whole player, glass and all, even
         // when the value is the one it already held, so nothing reaches it unchanged.
-        engine.$state.removeDuplicates().sink { [weak self] value in self?.handle(state: value) }.store(in: &bag)
-        engine.$playbackPhase.removeDuplicates().sink { [weak self] in self?.phase = $0 }.store(in: &bag)
-        engine.$duration.removeDuplicates().sink { [weak self] in self?.duration = $0 }.store(in: &bag)
-        engine.$audioTracks.removeDuplicates().sink { [weak self] in self?.audioTracks = $0 }.store(in: &bag)
-        engine.$subtitleTracks.removeDuplicates().sink { [weak self] in self?.subtitleTracks = $0 }.store(in: &bag)
-        engine.$activeAudioTrackIndex.removeDuplicates().sink { [weak self] in self?.activeAudio = $0 }.store(in: &bag)
-        engine.$activeSubtitleTrackIndex.removeDuplicates().sink { [weak self] in self?.activeSubtitle = $0 }.store(in: &bag)
-        engine.$videoFormat.removeDuplicates().sink { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
-        engine.$hasFirstFrameReadyForDisplay.removeDuplicates().sink { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
-        engine.$mediaChapters.removeDuplicates().sink { [weak self] in self?.chapters = $0 }.store(in: &bag)
-        engine.$audioShapingState.removeDuplicates().sink { [weak self] in self?.shapingState = $0 }.store(in: &bag)
-        engine.$playbackPhase.removeDuplicates().sink { [weak self] phase in
+        engine.$state.removeDuplicates().sinkOnMain { [weak self] value in self?.handle(state: value) }.store(in: &bag)
+        engine.$playbackPhase.removeDuplicates().sinkOnMain { [weak self] in self?.phase = $0 }.store(in: &bag)
+        engine.$duration.removeDuplicates().sinkOnMain { [weak self] in self?.duration = $0 }.store(in: &bag)
+        engine.$audioTracks.removeDuplicates().sinkOnMain { [weak self] in self?.audioTracks = $0 }.store(in: &bag)
+        engine.$subtitleTracks.removeDuplicates().sinkOnMain { [weak self] in self?.subtitleTracks = $0 }.store(in: &bag)
+        engine.$activeAudioTrackIndex.removeDuplicates().sinkOnMain { [weak self] in self?.activeAudio = $0 }.store(in: &bag)
+        engine.$activeSubtitleTrackIndex.removeDuplicates().sinkOnMain { [weak self] in self?.activeSubtitle = $0 }.store(in: &bag)
+        engine.$videoFormat.removeDuplicates().sinkOnMain { [weak self] in self?.videoFormat = $0 }.store(in: &bag)
+        engine.$hasFirstFrameReadyForDisplay.removeDuplicates().sinkOnMain { [weak self] in self?.hasFirstFrame = $0 }.store(in: &bag)
+        engine.$mediaChapters.removeDuplicates().sinkOnMain { [weak self] in self?.chapters = $0 }.store(in: &bag)
+        engine.$audioShapingState.removeDuplicates().sinkOnMain { [weak self] in self?.shapingState = $0 }.store(in: &bag)
+        engine.$playbackPhase.removeDuplicates().sinkOnMain { [weak self] phase in
             guard let self, self.hasFirstFrame, case .rebuffering = phase else { return }
             self.stallCount += 1
         }.store(in: &bag)
         // Cues and the source clock go to the subtitle feed only, never to the player.
-        engine.$subtitleCues.sink { [weak self] in self?.subtitles.update(cues: $0) }.store(in: &bag)
-        engine.clock.$sourceTime.removeDuplicates().sink { [weak self] in self?.subtitles.update(time: $0) }.store(in: &bag)
+        engine.$subtitleCues.sinkOnMain { [weak self] in self?.subtitles.update(cues: $0) }.store(in: &bag)
+        engine.clock.$sourceTime.removeDuplicates().sinkOnMain { [weak self] in self?.subtitles.update(time: $0) }.store(in: &bag)
         engine.clock.$bufferedPosition
             .map { $0.isFinite ? $0.rounded(.down) : 0 }
             .removeDuplicates()
-            .sink { [weak self] in self?.time.buffered = $0 }.store(in: &bag)
-        engine.clock.$currentTime.removeDuplicates().sink { [weak self] value in
+            .sinkOnMain { [weak self] in self?.time.buffered = $0 }.store(in: &bag)
+        engine.clock.$currentTime.removeDuplicates().sinkOnMain { [weak self] value in
             guard let self else { return }
             self.time.currentTime = value
             self.saveProgress(force: false)
             self.checkSleepTimer()
         }.store(in: &bag)
         // A new AVPlayer (every load and reroute) means a new layer to build PiP around.
-        engine.$currentAVPlayer.sink { [weak self] _ in
+        engine.$currentAVPlayer.sinkOnMain { [weak self] _ in
             guard let self, let engine = self.engine else { return }
             self.pip.attach(layer: engine.nativePlayerLayer, engine: engine)
         }.store(in: &bag)

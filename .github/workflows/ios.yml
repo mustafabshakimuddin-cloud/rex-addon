@@ -248,6 +248,7 @@ jobs:
         run: |
           APP=build/Build/Products/Debug-iphonesimulator/Reel.app
           mkdir -p shots
+          CRASHES=""
           # perl's alarm stands in for coreutils timeout, which macOS lacks.
           limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
           for NAME in "iPhone Duo" "iPhone 17"; do
@@ -285,6 +286,7 @@ jobs:
                 echo "::warning::$NAME: couldn't check whether the app is running on the $SCREEN screen"
               elif ! printf '%s\n' "$RUNNING" | grep -q community.reel.app; then
                 echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"
+                CRASHES="$CRASHES $NAME/$SCREEN"
                 limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
               fi
               # A freshly booted Duo may not answer the display probe; ask again once it's up.
@@ -301,6 +303,8 @@ jobs:
             done
             limit 60 xcrun simctl shutdown "$UDID" || true
           done
+          # Every screen is still captured first, so the shots show what each crash left behind.
+          if [ -n "$CRASHES" ]; then echo "::error::The app stopped on:$CRASHES"; exit 1; fi
 
       - name: Compare with the reference screenshots
         if: always()
