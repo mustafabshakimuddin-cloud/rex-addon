@@ -100,7 +100,8 @@ private struct SubtitleLayer: View {
             case let .text(string):
                 Text(Self.clean(string))
             case let .richText(runs):
-                runs.reduce(Text("")) { result, run in result + styled(run) }
+                // Text interpolation joins the styled runs; `+` on Text is deprecated.
+                runs.reduce(Text(verbatim: "")) { result, run in Text("\(result)\(styled(run))") }
             case .image:
                 EmptyView()
             }

@@ -87,7 +87,9 @@ final class DownloadActivities {
         if let activity = activities[item.id] {
             if let last = lastUpdate[item.id], Date().timeIntervalSince(last) < 5 { return }
             lastUpdate[item.id] = Date()
-            Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+            // ActivityKit's handle isn't marked Sendable, though its methods are safe from any task.
+            nonisolated(unsafe) let handle = activity
+            Task { await handle.update(ActivityContent(state: state, staleDate: nil)) }
         } else if let activity = try? Activity.request(attributes: DownloadActivityAttributes(title: item.target.displayTitle),
                                                        content: ActivityContent(state: state, staleDate: nil)) {
             activities[item.id] = activity
@@ -100,6 +102,8 @@ final class DownloadActivities {
         lastUpdate[item.id] = nil
         let state = DownloadActivityAttributes.ContentState(fraction: finished ? 1 : item.fraction,
                                                             detail: finished ? "Ready to watch offline" : "Stopped", finished: finished)
-        Task { await activity.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(Date().addingTimeInterval(finished ? 900 : 60))) }
+        nonisolated(unsafe) let handle = activity
+        let dismissal = Date().addingTimeInterval(finished ? 900 : 60)
+        Task { await handle.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(dismissal)) }
     }
 }

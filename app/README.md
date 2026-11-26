@@ -129,13 +129,34 @@ or fit; hold for double speed. On a keyboard: space, ←/→ (⇧ for a minute),
 timer is under Speed. Each series remembers its audio and subtitle language, subtitle timing,
 fill and speed, and an intro you scrub past is offered as Skip Intro in the next episodes.
 
+## More in this version
+
+- **Audio**: night mode, a dialogue boost and a lift for quietly mixed films (Audio tab in the
+  player, or Settings → Player). Playback info shows bitrate, audio sync and cache.
+- **Two debrid services**: a second one is searched alongside the first and fills in what it
+  hasn't cached. **Library → Files** lists what's already in a Real-Debrid, AllDebrid, Premiumize
+  or TorBox account and plays it.
+- **Addon catalogues** appear as rows in Explore. **TMDB** (optional key) adds cast photos and
+  biographies. **More Like This** uses Trakt's related titles when a Trakt app is set.
+- **Lists** of your own next to My List, plus your Trakt lists, in Library; *Add to List* is in
+  every title's menu.
+- **Profiles**: each person has their own My List, history, lists, player choices and Trakt
+  account; a kids profile shows family and animation titles only.
+- **Widgets**: Continue Watching and Next Episodes, and downloads as a Live Activity. They need
+  the app group `group.community.reel.app`, which CI signs into the app; with a free Apple ID
+  the widget extension uses one more of the week's App IDs.
+- **Languages**: English, Simplified Chinese, Spanish, French and German.
+
 ## Saved data
 
 The library, source memory, downloads index and pending Trakt changes are JSON files in
 Application Support. A file that can't be read is renamed `*.unreadable-<date>.json` and kept,
 never overwritten. Settings → Back Up and Restore writes everything but credentials to one file.
 
-## Tests
+## Tests and checks
 
-`ReelTests` covers release parsing, ranking, Torrentio options, redaction and the library's rules
-(unaired episodes, Up Next, Trakt merges). CI runs it on a simulator.
+`ReelTests` covers release parsing, ranking, Torrentio options, redaction, the library's rules
+(unaired episodes, Up Next, Trakt merges), lists, profiles and the mock server. CI runs it on a
+simulator, lints with SwiftLint (reporting only), and takes screenshots with `-ReelMock`, which
+answers every request from fixed data. Screens that differ from `ReelTests/Screenshots` are
+reported as warnings; to refresh a reference, copy the run's `*-small.jpg` into that folder.
