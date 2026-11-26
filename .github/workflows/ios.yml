@@ -262,9 +262,19 @@ jobs:
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
               limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
               if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
-              if ! limit 30 xcrun simctl spawn "$UDID" launchctl list | grep -q community.reel.app; then
+              # The check itself can be slow right after boot; only a list that came back without
+              # the app means it isn't running.
+              RUNNING=$(limit 60 xcrun simctl spawn "$UDID" launchctl list 2>/dev/null || echo "CHECK-TIMED-OUT")
+              if [ "$RUNNING" = "CHECK-TIMED-OUT" ]; then
+                echo "::warning::$NAME: couldn't check whether the app is running on the $SCREEN screen"
+              elif ! printf '%s\n' "$RUNNING" | grep -q community.reel.app; then
                 echo "::error::$NAME: the app is not running on the $SCREEN screen (crashed?)"
                 limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -60 || true
+              fi
+              # A freshly booted Duo may not answer the display probe; ask again once it's up.
+              if [ "$DISPLAYS" = "default" ]; then
+                PROBE=$(limit 30 xcrun simctl io "$UDID" screenshot /dev/null 2>&1 | grep -oE -- '--display=[0-9]+' || true)
+                [ -n "$PROBE" ] && DISPLAYS="$PROBE"
               fi
               for D in $DISPLAYS; do
                 SHOT="$SLUG-$SCREEN${D#--display=}"; [ "$D" = "default" ] && SHOT="$SLUG-$SCREEN"
