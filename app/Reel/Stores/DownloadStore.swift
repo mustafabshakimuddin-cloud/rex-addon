@@ -75,6 +75,8 @@ final class DownloadStore: ObservableObject {
     enum Event { case finished(DownloadItem), failed(DownloadItem, String) }
     /// Told when a download finishes or fails, so the app can say so.
     var onEvent: ((Event) -> Void)?
+    /// Told as a download moves, about once a second, with its speed: the Live Activity.
+    var onProgress: ((DownloadItem, Double?) -> Void)?
 
     /// Handed over by the app delegate when the system relaunches the app for finished transfers.
     var backgroundCompletion: (() -> Void)?
@@ -252,6 +254,7 @@ final class DownloadStore: ObservableObject {
             $0.written = written
             if expected > 0 { $0.expected = expected }
         }
+        if let item = items[id] { onProgress?(item, speeds[id]) }
     }
 
     fileprivate func finished(_ id: String, fileName: String) {

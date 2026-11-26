@@ -54,6 +54,7 @@ final class AppStores {
     let lists = ListsStore()
     let profiles = ProfileStore()
     lazy var playback = PlaybackCenter(memory: memory, downloads: downloads)
+    let downloadActivities = DownloadActivities()
 
     init() {
         // The profile in use is settled before Trakt syncs, so its account fills its library.
@@ -61,12 +62,16 @@ final class AppStores {
         trakt.attach(library)
         let alerts = alerts
         let settings = settings
+        let activities = downloadActivities
+        downloads.onProgress = { item, speed in activities.progress(item, speed: speed) }
         downloads.onEvent = { event in
             switch event {
             case let .finished(item):
+                activities.end(item, finished: true)
                 alerts.post("Downloaded", message: item.target.displayTitle, level: .success, action: .openDownloads)
                 if settings.notifyDownloads { Notifier.downloadFinished(item) }
             case let .failed(item, message):
+                activities.end(item, finished: false)
                 alerts.post("Download failed", message: "\(item.target.displayTitle): \(message)", level: .problem, action: .openDownloads)
             }
         }
@@ -107,6 +112,12 @@ final class AppStores {
     }
 
     func wentToBackground() {
+        let library = library, upcoming = upcoming
+        let done = BackgroundTime.begin("Widgets")
+        Task {
+            await WidgetPublisher.publish(library: library, upcoming: upcoming)
+            done()
+        }
         library.saveNow()
         lists.saveNow()
         memory.saveNow()
@@ -134,8 +145,19 @@ final class AppStores {
     /// Opens what a link names: `reel://title/tt0111161?type=movie`, an IMDb title link, or a
     /// Spotlight or Handoff result.
     func open(_ url: URL) {
+        if resume(url) { return }
         guard let (id, kind) = Self.title(in: url) else { return }
         router.open(MediaItem.placeholder(id: id, kind: kind))
+    }
+
+    /// `reel://resume/<video id>`: plays that entry of Continue Watching, as a widget asks.
+    private func resume(_ url: URL) -> Bool {
+        guard url.host == "resume" else { return false }
+        let videoID = url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
+        guard let entry = library.continueWatching.first(where: { $0.id == videoID }) else { return false }
+        router.tab = .home
+        playback.play(entry.target, settings: settings, library: library, automatic: true)
+        return true
     }
 
     nonisolated static func title(in url: URL) -> (String, MediaKind)? {

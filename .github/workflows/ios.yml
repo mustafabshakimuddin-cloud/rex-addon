@@ -90,6 +90,17 @@ jobs:
             if xcrun --find bitcode_strip >/dev/null 2>&1; then xcrun bitcode_strip -r "$BIN" -o "$BIN.nobc" && mv "$BIN.nobc" "$BIN"; fi
           done
           find Payload -name "*.dSYM" -prune -exec rm -rf {} +
+          # Ad-hoc signatures that carry the entitlements: a sideloading store reads them to know
+          # the app and its widgets share an app group, and grants it when it signs for the device.
+          # Inner code first, the app last.
+          for FW in Payload/Reel.app/Frameworks/*.framework Payload/Reel.app/Frameworks/*.dylib; do
+            [ -e "$FW" ] && codesign --force --sign - "$FW"
+          done
+          if [ -d Payload/Reel.app/PlugIns/ReelWidgets.appex ]; then
+            codesign --force --sign - --entitlements ReelWidgets/ReelWidgets.entitlements Payload/Reel.app/PlugIns/ReelWidgets.appex
+          fi
+          codesign --force --sign - --entitlements Reel/Reel.entitlements Payload/Reel.app
+          codesign -d --entitlements - Payload/Reel.app 2>/dev/null | grep -q "group.community.reel.app" || { echo "::error::app group entitlement missing"; exit 1; }
           for BIN in Payload/Reel.app/Reel Payload/Reel.app/Frameworks/*.framework/*; do
             [ -f "$BIN" ] && file "$BIN" | grep -q "Mach-O" && lipo -info "$BIN"
           done

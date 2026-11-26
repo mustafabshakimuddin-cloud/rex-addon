@@ -223,6 +223,7 @@ struct RootView: View {
         .task(id: UpcomingStore.followedSeries(library).map(\.id)) {
             await upcoming.refresh(library)
             if settings.notifyNewEpisodes { await Notifier.scheduleEpisodes(upcoming.upcoming) }
+            await WidgetPublisher.publish(library: library, upcoming: upcoming)
         }
         .task(id: library.watchlist.map(\.id)) {
             try? await Task.sleep(nanoseconds: 2_000_000_000)

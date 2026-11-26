@@ -23,9 +23,13 @@ targets:
     platform: iOS
     sources:
       - path: Reel
+      - path: Shared
     dependencies:
       - package: AetherEngine
         product: AetherEngine
+      # Widgets and the download Live Activity.
+      - target: ReelWidgets
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: community.reel.app
@@ -36,6 +40,9 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
         DEAD_CODE_STRIPPING: YES
+        # The app group the widgets read from. CI signs ad hoc with this file, so a sideloading
+        # store sees the group and grants it when it signs the app for the device.
+        CODE_SIGN_ENTITLEMENTS: Reel/Reel.entitlements
     scheme:
       testTargets:
         - ReelTests
@@ -81,6 +88,7 @@ targets:
           NSAllowsArbitraryLoadsForMedia: true
           NSAllowsArbitraryLoads: true
         ITSAppUsesNonExemptEncryption: false
+        NSSupportsLiveActivities: true
   # Logic tests: release parsing, ranking, the library's rules. Run in CI on a simulator.
   ReelTests:
     type: bundle.unit-test
@@ -93,3 +101,28 @@ targets:
       base:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: community.reel.tests
+
+  # Continue Watching and Next Episodes widgets, and the download Live Activity.
+  ReelWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ReelWidgets
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: community.reel.app.widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Reel
+        CODE_SIGN_ENTITLEMENTS: ReelWidgets/ReelWidgets.entitlements
+        MARKETING_VERSION: $(MARKETING_VERSION)
+        SKIP_INSTALL: YES
+    info:
+      path: ReelWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Reel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
