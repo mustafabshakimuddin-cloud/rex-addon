@@ -25,6 +25,7 @@ enum HTTP {
         config.requestCachePolicy = .useProtocolCachePolicy
         config.urlCache = URLCache(memoryCapacity: 16 << 20, diskCapacity: 128 << 20)
         config.httpAdditionalHeaders = ["Accept": "application/json", "User-Agent": userAgent]
+        if MockServer.isActive { config.protocolClasses = [MockServer.self] + (config.protocolClasses ?? []) }
         return URLSession(configuration: config)
     }()
 

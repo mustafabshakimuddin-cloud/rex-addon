@@ -276,7 +276,8 @@ jobs:
             # screen ("home" opens nothing else; "setup" shows setup itself).
             for SCREEN in home setup detail sources player movies calendar library settings status; do
               limit 30 xcrun simctl terminate "$UDID" community.reel.app >/dev/null 2>&1 || true
-              limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" || true
+              # -ReelMock answers every request from fixed data, so shots compare between runs.
+              limit 300 xcrun simctl launch "$UDID" community.reel.app -ReelShot "$SCREEN" -ReelMock || true
               if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
               # The check itself can be slow right after boot; only a list that came back without
               # the app means it isn't running.
@@ -301,9 +302,24 @@ jobs:
             limit 60 xcrun simctl shutdown "$UDID" || true
           done
 
+      - name: Compare with the reference screenshots
+        if: always()
+        run: python3 tools/compare_shots.py shots ReelTests/Screenshots || true
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: simulator-screenshots
           path: app/shots/
           retention-days: 14
+
+  # Style and likely mistakes, as annotations on the commit. Never fails the run.
+  lint:
+    name: SwiftLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work/app ghcr.io/realm/swiftlint:latest \
+            swiftlint lint --quiet --reporter github-actions-logging || true

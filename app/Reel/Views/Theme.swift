@@ -107,6 +107,17 @@ actor ImageLoader {
         return image
     }
 
+    /// Starts decoding pictures about to scroll into view, at the size they'll be drawn, so a
+    /// shelf's later posters are ready when they arrive. Skips what is cached or on its way.
+    func prefetch(_ urls: [URL], maxPixelSize: Int) {
+        for url in urls.prefix(24) {
+            let bucket = max(64, ((maxPixelSize + 127) / 128) * 128)
+            let key = "\(url.absoluteString)#\(bucket)"
+            guard cache.object(forKey: key as NSString) == nil, inFlight[key] == nil else { continue }
+            Task(priority: .background) { _ = await self.image(for: url, maxPixelSize: maxPixelSize) }
+        }
+    }
+
     nonisolated static func downsample(_ data: Data, maxPixelSize: Int) -> UIImage? {
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else { return nil }
@@ -118,6 +129,27 @@ actor ImageLoader {
         ] as CFDictionary
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
         return UIImage(cgImage: image)
+    }
+}
+
+extension View {
+    /// Decodes the posters of a row ahead of scrolling, at the width the cards draw them.
+    func prefetchPosters(_ items: [MediaItem], width: CGFloat) -> some View {
+        modifier(PosterPrefetch(urls: items.compactMap(\.poster), width: width))
+    }
+}
+
+private struct PosterPrefetch: ViewModifier {
+    let urls: [URL]
+    let width: CGFloat
+    @Environment(\.displayScale) private var scale
+
+    func body(content: Content) -> some View {
+        content.task(id: urls) {
+            // RemoteImage asks for the same size, so these land in the same cache entries.
+            let pixels = min(Int(width * scale * 1.5), 2400)
+            await ImageLoader.shared.prefetch(urls, maxPixelSize: pixels)
+        }
     }
 }
 

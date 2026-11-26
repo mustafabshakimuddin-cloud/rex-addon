@@ -154,3 +154,16 @@ struct ExportTests {
         #expect(!SourcePreferences.mentions(language: "fre", in: source))
     }
 }
+
+struct MockTests {
+    @Test func mockAnswersEverythingTheTourAsks() throws {
+        let catalog = MockServer.answer(for: URL(string: "https://cinemeta-catalogs.strem.io/top/catalog/movie/top.json")!)
+        #expect(catalog.0 == 200)
+        let metas = try #require((try JSONSerialization.jsonObject(with: catalog.2) as? [String: Any])?["metas"] as? [[String: Any]])
+        #expect(metas.count == 12)
+        let streams = MockServer.answer(for: URL(string: "https://torrentio.strem.fun/stream/movie/tt9900001.json")!)
+        #expect(String(data: streams.2, encoding: .utf8)?.contains("2160p") == true)
+        let series = MockServer.answer(for: URL(string: "https://v3-cinemeta.strem.io/meta/series/tt0903747.json")!)
+        #expect(String(data: series.2, encoding: .utf8)?.contains("videos") == true)
+    }
+}

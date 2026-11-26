@@ -207,6 +207,7 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                         .contextMenu { TitleContextMenu(item: item) }
                 }
+                .prefetchPosters(items, width: metrics.poster)
             }
         }
     }
