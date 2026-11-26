@@ -6,6 +6,7 @@ import CoreSpotlight
 
 /// Hands the background download session's wake-up to the download store, and notification taps
 /// to the router.
+@MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     static var pendingBackgroundCompletion: (() -> Void)?
 
