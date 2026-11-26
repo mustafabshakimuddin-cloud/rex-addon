@@ -14,10 +14,10 @@ extension Publisher where Failure == Never {
     func sinkOnMain(_ receive: @escaping @MainActor (Output) -> Void) -> AnyCancellable {
         let receive = Unchecked(value: receive)
         return sink { output in
+            let box = Unchecked(value: output)
             if Thread.isMainThread {
-                MainActor.assumeIsolated { receive.value(output) }
+                MainActor.assumeIsolated { receive.value(box.value) }
             } else {
-                let box = Unchecked(value: output)
                 DispatchQueue.main.async { receive.value(box.value) }
             }
         }
