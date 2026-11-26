@@ -250,6 +250,22 @@ final class TraktStore: ObservableObject {
         return try await Trakt.discover(list, kind: kind, credentials: credentials, token: token)
     }
 
+    /// Titles related to this one, from Trakt; needs only the API application, not a sign-in.
+    func related(_ item: MediaItem) async throws -> [MediaItem] {
+        guard let credentials else { return [] }
+        return try await Trakt.related(item, credentials: credentials)
+    }
+
+    func lists() async throws -> [Trakt.List] {
+        guard let credentials, let token = await validToken() else { return [] }
+        return try await Trakt.lists(credentials: credentials, token: token)
+    }
+
+    func items(of list: Trakt.List) async throws -> [MediaItem] {
+        guard let credentials, let token = await validToken() else { return [] }
+        return try await Trakt.listItems(list, credentials: credentials, token: token)
+    }
+
     // MARK: Token
 
     private func validToken() async -> Trakt.Token? {

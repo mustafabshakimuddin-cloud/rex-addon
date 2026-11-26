@@ -272,6 +272,7 @@ struct DetailView: View {
                 Button { library.markWatched(aired, of: shown) } label: { Label("Mark All Aired as Watched", systemImage: "checkmark.circle") }
                 Button { library.markUnwatched(detail.episodes, of: shown) } label: { Label("Mark All as Unwatched", systemImage: "circle") }
             }
+            AddToListMenu(item: shown)
             if trakt.isConnected {
                 Menu {
                     ForEach((1...10).reversed(), id: \.self) { value in
@@ -427,7 +428,11 @@ struct DetailView: View {
                     }
                     ForEach(detail.cast, id: \.self) { name in
                         NavigationLink(value: PersonRoute(name: name)) {
-                            Chip(text: name, systemImage: "person.fill")
+                            if TMDB.isConfigured {
+                                CastCard(name: name)
+                            } else {
+                                Chip(text: name, systemImage: "person.fill")
+                            }
                         }
                         .buttonStyle(.plain)
                     }
@@ -518,6 +523,8 @@ struct EpisodeRow: View {
 struct MoreLikeThis: View {
     let item: MediaItem
     @EnvironmentObject private var library: Library
+    @EnvironmentObject private var trakt: TraktStore
+    @State private var fromTrakt = false
     @EnvironmentObject private var downloads: DownloadStore
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.cardScale) private var cardScale
@@ -527,7 +534,7 @@ struct MoreLikeThis: View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
         Group {
             if !items.isEmpty, let genre = item.genres.first {
-                ShelfRow(title: "More Like This", subtitle: "Popular in \(genre)", items: items, seeAll: {
+                ShelfRow(title: "More Like This", subtitle: fromTrakt ? "Watched alongside it on Trakt" : "Popular in \(genre)", items: items, seeAll: {
                     CatalogGridView(title: "\(genre) \(item.kind.title)", kind: item.kind, catalog: .popular, genre: genre)
                 }) { other in
                     NavigationLink(value: other) { PosterCard(item: other, width: metrics.poster, mark: library.mark(for: other, downloads: downloads)) }
@@ -537,6 +544,13 @@ struct MoreLikeThis: View {
             }
         }
         .task(id: item.id + (item.genres.first ?? "")) {
+            // Trakt's "related" knows what people actually watch next; the genre list is the fallback.
+            if trakt.credentials != nil, let related = try? await trakt.related(item), related.count >= 4 {
+                items = related.filter { $0.id != item.id }
+                fromTrakt = true
+                return
+            }
+            fromTrakt = false
             guard let genre = item.genres.first else { return }
             let found = (try? await Cinemeta.catalog(item.kind, .popular, genre: genre)) ?? []
             // Titles sharing a second genre too come first.
@@ -548,5 +562,20 @@ struct MoreLikeThis: View {
                 }
                 .prefix(16).map { $0 }
         }
+    }
+}
+
+/// A cast member with their photo, when TMDB is set up.
+private struct CastCard: View {
+    let name: String
+    @State private var photo: URL?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            PersonPhoto(name: name, photo: photo, size: 64)
+            Text(name).font(.caption.weight(.semibold)).lineLimit(2).multilineTextAlignment(.center)
+        }
+        .frame(width: 84)
+        .task(id: name) { photo = await TMDB.shared.person(named: name)?.photo }
     }
 }

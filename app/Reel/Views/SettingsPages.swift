@@ -29,7 +29,7 @@ struct AddonsView: View {
             } header: {
                 Text("Add")
             } footer: {
-                Text("Paste the install link from the addon's configure page. It ends in manifest.json and may start with stremio://. If it contains your debrid key, configure it there with the same service you use here.")
+                Text("Paste the install link from the addon's configure page. It ends in manifest.json and may start with stremio://. If it contains your debrid key, configure it there with the same service you use here. An addon's streams join Torrentio's, and its catalogues appear in Explore under Rows.")
             }
 
             Section("Installed") {
@@ -41,6 +41,10 @@ struct AddonsView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(addon.name)
                             Text(URL(string: addon.base)?.host ?? addon.base).font(.caption).foregroundStyle(Theme.secondaryText)
+                            Text([addon.hasStreams ? "Streams" : nil,
+                                  (addon.catalogs?.isEmpty ?? true) ? nil : "\(addon.catalogs!.count) catalogue\(addon.catalogs!.count == 1 ? "" : "s") in Explore"]
+                                .compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption2).foregroundStyle(Theme.secondaryText)
                             if addon.base.hasPrefix("http://") {
                                 Label("Not encrypted: its links, and any key in them, travel in the clear.", systemImage: "lock.open")
                                     .font(.caption2).foregroundStyle(Theme.warning)
@@ -328,6 +332,7 @@ struct OfflineSettingsView: View {
 struct BackupView: View {
     @EnvironmentObject private var library: Library
     @EnvironmentObject private var memory: SourceMemory
+    @EnvironmentObject private var lists: ListsStore
     @State private var exportURL: URL?
     @State private var importing = false
     @State private var message: String?
@@ -362,7 +367,7 @@ struct BackupView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.Backdrop())
         .navigationTitle("Back Up and Restore")
-        .task { exportURL = Backup.write(library: library, memory: memory) }
+        .task { exportURL = Backup.write(library: library, memory: memory, lists: lists) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             if case let .success(url) = result { confirmRestore = url }
         }
@@ -380,10 +385,62 @@ struct BackupView: View {
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         do {
             let data = try Data(contentsOf: url)
-            try Backup.restore(data, library: library, memory: memory)
+            try Backup.restore(data, library: library, memory: memory, lists: lists)
             message = "Restored. Close and reopen \(AppConfig.name) for the restored settings to take effect."
         } catch {
             message = "That file isn't a \(AppConfig.name) backup."
+        }
+    }
+}
+
+/// An optional key for The Movie Database, for photos and biographies of cast and crew.
+struct TMDBSettingsView: View {
+    @State private var draft = TMDB.key
+    @State private var state: SettingsView.TestState = .idle
+
+    var body: some View {
+        Form {
+            Section {
+                SecureField("API key or read access token", text: $draft)
+                    .textContentType(.password)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                HStack {
+                    Button("Save and Test") { Task { await save() } }
+                        .disabled(state == .testing)
+                    Spacer()
+                    switch state {
+                    case .idle: EmptyView()
+                    case .testing: ProgressView()
+                    case let .ok(text): Label(text, systemImage: "checkmark.circle.fill").foregroundStyle(Theme.cached).font(.footnote)
+                    case let .failed(text): Label(text, systemImage: "xmark.octagon.fill").foregroundStyle(.red).font(.footnote)
+                    }
+                }
+                if let page = URL(string: "https://www.themoviedb.org/settings/api") {
+                    Link(destination: page) { Label("Get a free TMDB key", systemImage: "arrow.up.right.square") }
+                }
+            } footer: {
+                Text("Optional. With a key, cast and crew get photos and person pages get a biography. Leave it empty to turn this off. The key stays in this device's Keychain.")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.Backdrop())
+        .navigationTitle("TMDB")
+    }
+
+    private func save() async {
+        let key = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            TMDB.setKey("")
+            state = .ok("Off")
+            return
+        }
+        state = .testing
+        if await TMDB.test(key) {
+            TMDB.setKey(key)
+            state = .ok("Working")
+        } else {
+            state = .failed("TMDB refused that key.")
         }
     }
 }

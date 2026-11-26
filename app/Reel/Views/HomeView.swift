@@ -232,6 +232,7 @@ struct TitleContextMenu: View {
                 Button { library.markWatched(target) } label: { Label("Mark as Watched", systemImage: "checkmark.circle") }
             }
         }
+        AddToListMenu(item: item)
         NavigationLink(value: item) { Label(item.kind == .movie ? "Details" : "Episodes", systemImage: "info.circle") }
     }
 }

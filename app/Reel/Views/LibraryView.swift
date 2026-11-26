@@ -92,6 +92,7 @@ struct LibraryView: View {
                     }
                 }
                 myList(metrics)
+                ListsSection()
             }
             .padding(.vertical, 12)
         }

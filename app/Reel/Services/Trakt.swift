@@ -245,6 +245,63 @@ enum Trakt {
         }
     }
 
+    // MARK: Related and lists
+
+    /// Titles Trakt's users watch alongside this one.
+    static func related(_ item: MediaItem, credentials: Credentials) async throws -> [MediaItem] {
+        let type = item.kind == .movie ? "movies" : "shows"
+        let request = try request("/\(type)/\(item.id)/related?limit=20", method: "GET", credentials: credentials, token: nil)
+        let (data, response) = try await HTTP.session.data(for: request)
+        try check(response)
+        return parseWorks(data, kind: item.kind)
+    }
+
+    struct List: Identifiable, Hashable, Sendable {
+        let id: Int
+        let name: String
+        let itemCount: Int
+        let description: String?
+    }
+
+    /// The signed-in user's own lists.
+    static func lists(credentials: Credentials, token: Token) async throws -> [List] {
+        let request = try request("/users/me/lists", method: "GET", credentials: credentials, token: token)
+        let (data, response) = try await HTTP.session.data(for: request)
+        try check(response)
+        let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        return entries.compactMap { entry in
+            guard let ids = entry["ids"] as? [String: Any], let id = ids["trakt"] as? Int else { return nil }
+            return List(id: id, name: entry["name"] as? String ?? "List", itemCount: entry["item_count"] as? Int ?? 0,
+                        description: (entry["description"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+        }
+    }
+
+    /// The films and series on one of the user's lists, in its order.
+    static func listItems(_ list: List, credentials: Credentials, token: Token) async throws -> [MediaItem] {
+        let request = try request("/users/me/lists/\(list.id)/items/movie,show", method: "GET", credentials: credentials, token: token)
+        let (data, response) = try await HTTP.session.data(for: request)
+        try check(response)
+        let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        return entries.compactMap { entry in
+            for (key, kind) in [("movie", MediaKind.movie), ("show", .series)] {
+                if let work = entry[key] as? [String: Any], let item = workItem(work, kind: kind) { return item }
+            }
+            return nil
+        }
+    }
+
+    private static func parseWorks(_ data: Data, kind: MediaKind) -> [MediaItem] {
+        let entries = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] ?? []
+        let key = kind == .movie ? "movie" : "show"
+        return entries.compactMap { workItem((($0[key] as? [String: Any]) ?? $0), kind: kind) }
+    }
+
+    private static func workItem(_ work: [String: Any], kind: MediaKind) -> MediaItem? {
+        guard let ids = work["ids"] as? [String: Any], let imdb = ids["imdb"] as? String, imdb.hasPrefix("tt") else { return nil }
+        let decoded = Work(title: work["title"] as? String, year: work["year"] as? Int, ids: IDs(imdb: imdb), runtime: nil)
+        return item(id: imdb, kind: kind, work: decoded)
+    }
+
     // MARK: Wire format
 
     struct IDs: Decodable { let imdb: String? }

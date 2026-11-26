@@ -51,6 +51,7 @@ final class AppStores {
     let router = AppRouter()
     let alerts = AlertCenter()
     let upcoming = UpcomingStore()
+    let lists = ListsStore()
     lazy var playback = PlaybackCenter(memory: memory, downloads: downloads)
 
     init() {
@@ -91,6 +92,7 @@ final class AppStores {
 
     func wentToBackground() {
         library.saveNow()
+        lists.saveNow()
         memory.saveNow()
         if settings.notifyNewEpisodes { Notifier.scheduleRefresh() }
     }
@@ -153,6 +155,7 @@ struct ReelApp: App {
     @StateObject private var trakt: TraktStore
     @StateObject private var alerts: AlertCenter
     @StateObject private var upcoming: UpcomingStore
+    @StateObject private var lists: ListsStore
     @Environment(\.scenePhase) private var scenePhase
     private let stores: AppStores
 
@@ -170,6 +173,7 @@ struct ReelApp: App {
         _trakt = StateObject(wrappedValue: stores.trakt)
         _alerts = StateObject(wrappedValue: stores.alerts)
         _upcoming = StateObject(wrappedValue: stores.upcoming)
+        _lists = StateObject(wrappedValue: stores.lists)
     }
 
     var body: some Scene {
@@ -184,6 +188,7 @@ struct ReelApp: App {
                 .environmentObject(trakt)
                 .environmentObject(alerts)
                 .environmentObject(upcoming)
+                .environmentObject(lists)
                 .preferredColorScheme(.dark)
                 .tint(settings.accent.accent)
                 .onOpenURL { stores.open($0) }

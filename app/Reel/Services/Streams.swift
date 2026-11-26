@@ -198,15 +198,54 @@ enum StremioStreams {
 
 // MARK: - Addons
 
-/// A Stremio addon the user added by its manifest address, used for streams only.
+/// One list an addon offers to browse ("Trending anime", "Netflix new releases").
+struct AddonCatalog: Codable, Hashable, Identifiable, Sendable {
+    var id: String
+    var type: String
+    var name: String
+
+    var kind: MediaKind? { MediaKind(rawValue: type) }
+}
+
+/// A Stremio addon the user added by its manifest address: its streams join Torrentio's, and its
+/// catalogues appear in Explore.
 struct StreamAddon: Identifiable, Codable, Hashable {
     var id: String
     var name: String
     var base: String           // manifest address without "/manifest.json"
     var types: [String]
     var enabled = true
+    /// nil for addons saved before catalogues were read: those were stream addons.
+    var providesStreams: Bool?
+    var catalogs: [AddonCatalog]?
+
+    var hasStreams: Bool { providesStreams ?? true }
 
     func supports(_ kind: MediaKind) -> Bool { types.isEmpty || types.contains(kind.rawValue) }
+
+    init(id: String, name: String, base: String, types: [String], enabled: Bool = true,
+         providesStreams: Bool? = nil, catalogs: [AddonCatalog]? = nil) {
+        self.id = id
+        self.name = name
+        self.base = base
+        self.types = types
+        self.enabled = enabled
+        self.providesStreams = providesStreams
+        self.catalogs = catalogs
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, base, types, enabled, providesStreams, catalogs }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = (try? c.decode(String.self, forKey: .name)) ?? id
+        base = try c.decode(String.self, forKey: .base)
+        types = (try? c.decode([String].self, forKey: .types)) ?? []
+        enabled = (try? c.decode(Bool.self, forKey: .enabled)) ?? true
+        providesStreams = try? c.decodeIfPresent(Bool.self, forKey: .providesStreams)
+        catalogs = try? c.decodeIfPresent([AddonCatalog].self, forKey: .catalogs)
+    }
 }
 
 enum AddonError: LocalizedError {
@@ -215,7 +254,7 @@ enum AddonError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidAddress: return "That isn't an addon address. Paste the link that ends in manifest.json."
-        case .noStreams: return "This addon doesn't provide streams, so it can't add sources."
+        case .noStreams: return "This addon offers neither streams nor catalogues of films and series."
         }
     }
 }
@@ -231,8 +270,19 @@ enum Addons {
             throw AddonError.invalidAddress
         }
         let manifest = try await HTTP.get(manifestURL, as: Manifest.self)
-        guard manifest.providesStreams else { throw AddonError.noStreams }
-        return StreamAddon(id: manifest.id, name: manifest.name, base: address, types: manifest.streamTypes)
+        let catalogs = manifest.browsableCatalogs
+        guard manifest.providesStreams || !catalogs.isEmpty else { throw AddonError.noStreams }
+        return StreamAddon(id: manifest.id, name: manifest.name, base: address, types: manifest.streamTypes,
+                           providesStreams: manifest.providesStreams, catalogs: catalogs)
+    }
+
+    /// A page of an addon's catalogue. Only titles with an IMDb id are kept: title pages and
+    /// Torrentio both work by IMDb id.
+    static func catalog(_ catalog: AddonCatalog, from addon: StreamAddon, page: Int = 0) async throws -> [MediaItem] {
+        let id = catalog.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? catalog.id
+        let skip = page > 0 ? "/skip=\(page * 100)" : ""
+        let url = try HTTP.url("\(addon.base)/catalog/\(catalog.type)/\(id)\(skip).json")
+        return try await Cinemeta.items(at: url, fallbackKind: catalog.kind ?? .movie)
     }
 
     static func streams(from addon: StreamAddon, kind: MediaKind, videoID: String) async throws -> [StreamSource] {
@@ -246,6 +296,25 @@ enum Addons {
         let name: String
         let types: [String]
         let resources: [Resource]
+        let catalogs: [Catalog]
+
+        struct Catalog: Decodable {
+            let type: String
+            let id: String
+            let name: String?
+            let extra: [Extra]?
+            let extraRequired: [String]?
+
+            struct Extra: Decodable {
+                let name: String
+                let isRequired: Bool?
+            }
+
+            /// Listable without typing anything: no required search, genre or skip.
+            var browsable: Bool {
+                (extra ?? []).allSatisfy { $0.isRequired != true } && (extraRequired ?? []).isEmpty
+            }
+        }
 
         struct Resource: Decodable {
             let name: String
@@ -269,8 +338,14 @@ enum Addons {
             name = (try? container.decode(String.self, forKey: .name)) ?? "Addon"
             types = (try? container.decode([String].self, forKey: .types)) ?? []
             resources = (try? container.decode([Resource].self, forKey: .resources)) ?? []
+            catalogs = (try? container.decode([Lossy<Catalog>].self, forKey: .catalogs))?.compactMap(\.value) ?? []
         }
-        enum CodingKeys: String, CodingKey { case id, name, types, resources }
+        enum CodingKeys: String, CodingKey { case id, name, types, resources, catalogs }
+
+        var browsableCatalogs: [AddonCatalog] {
+            catalogs.filter { $0.browsable && MediaKind(rawValue: $0.type) != nil }
+                .map { AddonCatalog(id: $0.id, type: $0.type, name: $0.name ?? $0.id) }
+        }
 
         var providesStreams: Bool { resources.contains { $0.name == "stream" } }
         var streamTypes: [String] { resources.first { $0.name == "stream" }?.types ?? types }
@@ -298,7 +373,7 @@ enum SourceFinder {
     /// Torrentio and every enabled addon at once, merged. One addon failing or timing out never
     /// hides the others' results; only when every one of them fails is that an error.
     static func find(kind: MediaKind, videoID: String, query: SourceQuery) async throws -> [StreamSource] {
-        let addons = query.addons.filter { $0.enabled && $0.supports(kind) }
+        let addons = query.addons.filter { $0.enabled && $0.hasStreams && $0.supports(kind) }
         var results: [Int: [StreamSource]] = [:]
         var firstError: Error?
         await withTaskGroup(of: (Int, Result<[StreamSource], Error>).self) { group in

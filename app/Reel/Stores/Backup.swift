@@ -8,6 +8,8 @@ enum Backup {
         var createdAt: Date
         var library: Data
         var sources: SourceMemory.Saved
+        /// Lists of your own; absent from backups made before lists existed.
+        var lists: [CustomList]?
         /// The settings, as a property list.
         var settings: Data
     }
@@ -20,13 +22,13 @@ enum Backup {
     ]
 
     @MainActor
-    static func data(library: Library, memory: SourceMemory) -> Data? {
+    static func data(library: Library, memory: SourceMemory, lists: ListsStore? = nil) -> Data? {
         let defaults = UserDefaults.standard.dictionaryRepresentation()
             .filter { key, _ in prefixes.contains { key.hasPrefix($0) } }
         guard let libraryData = library.exportData(),
               let settings = try? PropertyListSerialization.data(fromPropertyList: defaults, format: .binary, options: 0) else { return nil }
         let file = File(app: AppConfig.name, version: 1, createdAt: Date(), library: libraryData,
-                        sources: memory.snapshot, settings: settings)
+                        sources: memory.snapshot, lists: lists?.lists, settings: settings)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         return try? encoder.encode(file)
@@ -34,20 +36,21 @@ enum Backup {
 
     /// Writes the backup to a temporary file named for today, for the share sheet.
     @MainActor
-    static func write(library: Library, memory: SourceMemory) -> URL? {
-        guard let data = data(library: library, memory: memory) else { return nil }
+    static func write(library: Library, memory: SourceMemory, lists: ListsStore? = nil) -> URL? {
+        guard let data = data(library: library, memory: memory, lists: lists) else { return nil }
         let day = Date().formatted(.iso8601.year().month().day())
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(AppConfig.name) Backup \(day).json")
         return (try? data.write(to: url, options: .atomic)) != nil ? url : nil
     }
 
     @MainActor
-    static func restore(_ data: Data, library: Library, memory: SourceMemory) throws {
+    static func restore(_ data: Data, library: Library, memory: SourceMemory, lists: ListsStore? = nil) throws {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let file = try decoder.decode(File.self, from: data)
         try library.importData(file.library)
         memory.restore(file.sources)
+        if let saved = file.lists { lists?.replaceAll(saved) }
         if let settings = try? PropertyListSerialization.propertyList(from: file.settings, format: nil) as? [String: Any] {
             for (key, value) in settings where prefixes.contains(where: { key.hasPrefix($0) }) {
                 UserDefaults.standard.set(value, forKey: key)

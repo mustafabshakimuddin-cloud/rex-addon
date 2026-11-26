@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to a work branch replaces the run in progress; builds of main always finish.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   build:
     name: Unsigned .ipa

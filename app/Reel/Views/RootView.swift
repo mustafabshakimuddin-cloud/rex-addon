@@ -135,6 +135,7 @@ extension View {
     func appDestinations() -> some View {
         navigationDestination(for: MediaItem.self) { DetailView(item: $0) }
             .navigationDestination(for: PersonRoute.self) { PersonView(name: $0.name) }
+            .navigationDestination(for: ListRoute.self) { ListDetailView(route: $0) }
             .navigationDestination(for: LibraryPage.self) { page in
                 switch page {
                 case .downloads: DownloadsView()

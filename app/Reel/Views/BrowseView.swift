@@ -139,12 +139,114 @@ private struct ExploreRows: View {
             + Cinemeta.genres(for: kind).map { Shelf(title: $0, catalog: .popular, genre: $0) }
     }
 
+    @EnvironmentObject private var settings: AppSettings
+
+    /// Catalogues from the addons you've added, for this kind of title.
+    private struct AddonShelfKey: Identifiable {
+        let addon: StreamAddon
+        let catalog: AddonCatalog
+        var id: String { "\(addon.id)|\(catalog.type)|\(catalog.id)" }
+    }
+
+    private var addonShelves: [AddonShelfKey] {
+        settings.addons.filter(\.enabled).flatMap { addon in
+            (addon.catalogs ?? []).filter { $0.kind == kind }.map { AddonShelfKey(addon: addon, catalog: $0) }
+        }
+    }
+
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 30) {
             ForEach(shelves) { shelf in
                 LazyShelf(title: shelf.title, kind: kind, catalog: shelf.catalog, genre: shelf.genre)
             }
+            ForEach(addonShelves) { shelf in
+                AddonShelf(addon: shelf.addon, catalog: shelf.catalog)
+            }
         }
+    }
+}
+
+/// One of an addon's catalogues as a shelf, with See All paging through the rest.
+struct AddonShelf: View {
+    let addon: StreamAddon
+    let catalog: AddonCatalog
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
+    @EnvironmentObject private var settings: AppSettings
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
+    @State private var loaded: [MediaItem] = []
+    @State private var failed = false
+
+    var body: some View {
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
+        let items = library.shown(loaded, hidingWatched: settings.hideWatched)
+        Group {
+            if !items.isEmpty {
+                ShelfRow(title: catalog.name, subtitle: addon.name, items: items, seeAll: {
+                    AddonCatalogGrid(addon: addon, catalog: catalog)
+                }) { item in
+                    NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
+                        .buttonStyle(.plain)
+                        .contextMenu { TitleContextMenu(item: item) }
+                }
+            } else if failed {
+                EmptyView()
+            } else {
+                SectionHeader(title: catalog.name, subtitle: addon.name).padding(.horizontal, 20)
+            }
+        }
+        .task(id: addon.id + catalog.id) {
+            do { loaded = Array(try await Addons.catalog(catalog, from: addon).prefix(20)) } catch { failed = true }
+        }
+    }
+}
+
+/// An addon catalogue as a grid, loading the next page as the end comes into view.
+struct AddonCatalogGrid: View {
+    let addon: StreamAddon
+    let catalog: AddonCatalog
+    @EnvironmentObject private var library: Library
+    @EnvironmentObject private var downloads: DownloadStore
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.cardScale) private var cardScale
+    @State private var items: [MediaItem] = []
+    @State private var page = 0
+    @State private var done = false
+    @State private var loading = false
+
+    var body: some View {
+        let metrics = CardMetrics(sizeClass, scale: cardScale)
+        ScrollView {
+            LazyVGrid(columns: metrics.posterColumns, spacing: 22) {
+                ForEach(items) { item in
+                    NavigationLink(value: item) {
+                        PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads))
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu { TitleContextMenu(item: item) }
+                    .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
+                }
+            }
+            .padding(20)
+            if loading { ProgressView().padding() }
+        }
+        .background(Theme.Backdrop())
+        .navigationTitle(catalog.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { if items.isEmpty { await loadMore() } }
+    }
+
+    private func loadMore() async {
+        guard !loading, !done else { return }
+        loading = true
+        defer { loading = false }
+        guard let next = try? await Addons.catalog(catalog, from: addon, page: page) else { done = true; return }
+        let known = Set(items.map(\.id))
+        let fresh = next.filter { !known.contains($0.id) }
+        items += fresh
+        page += 1
+        done = fresh.isEmpty
     }
 }
 
@@ -562,21 +664,29 @@ final class PersonModel: ObservableObject {
 /// A cast or crew member: what they're known for, then everything they're credited in.
 struct PersonView: View {
     let name: String
+    @State private var person: TMDB.Person?
+    @State private var expandedBio = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 HStack(spacing: 16) {
-                    Text(initials)
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                        .frame(width: 84, height: 84)
-                        .background(Theme.accentGradient, in: Circle())
+                    PersonPhoto(name: name, photo: person?.photo, size: 84)
                     VStack(alignment: .leading, spacing: 4) {
                         Text(name).font(.largeTitle.weight(.bold)).lineLimit(2).minimumScaleFactor(0.6)
-                        Text("Cast and crew").font(.subheadline).foregroundStyle(Theme.secondaryText)
+                        Text(subtitle).font(.subheadline).foregroundStyle(Theme.secondaryText)
                     }
                 }
                 .padding(.horizontal, 20)
+                if let bio = person?.biography {
+                    Text(bio)
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(expandedBio ? nil : 5)
+                        .onTapGesture { withAnimation(.snappy) { expandedBio.toggle() } }
+                        .padding(.horizontal, 20)
+                        .frame(maxWidth: 760, alignment: .leading)
+                }
                 PersonResults(name: name)
             }
             .padding(.vertical, 12)
@@ -584,10 +694,35 @@ struct PersonView: View {
         .background(Theme.Backdrop())
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: name) { person = await TMDB.shared.person(named: name, details: true) }
     }
 
-    private var initials: String {
-        name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
+    private var subtitle: String {
+        var parts = [person?.department ?? "Cast and crew"]
+        if let born = person?.birthday { parts.append("Born \(born)") }
+        if let place = person?.birthplace { parts.append(place) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// A person's photo from TMDB when there is one, otherwise their initials.
+struct PersonPhoto: View {
+    let name: String
+    let photo: URL?
+    var size: CGFloat = 44
+
+    var body: some View {
+        ZStack {
+            Circle().fill(Theme.accentGradient)
+            Text(name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined())
+                .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
+            if let photo {
+                RemoteImage(url: photo, targetWidth: size)
+                    .clipShape(Circle())
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 

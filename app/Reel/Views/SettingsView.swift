@@ -148,8 +148,13 @@ struct SettingsView: View {
                         }
                     }
                 }
+                NavigationLink {
+                    TMDBSettingsView()
+                } label: {
+                    LabeledContent("TMDB", value: TMDB.isConfigured ? "On" : "Off")
+                }
             } header: {
-                Text("Sync")
+                Text("Sync and Services")
             } footer: {
                 Text("Trakt keeps your watchlist, resume points and watched episodes in step with other apps and devices, and records what you watch here.")
             }

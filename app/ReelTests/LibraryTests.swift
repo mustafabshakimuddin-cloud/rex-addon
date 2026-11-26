@@ -107,3 +107,22 @@ struct LibraryTests {
         #expect(library.furthestEpisode(inSeries: show.id) ?? (0, 0) == (2, 4))
     }
 }
+
+@MainActor
+struct ListsTests {
+    @Test func listsKeepTheirTitles() {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lists-\(UUID().uuidString).json")
+        let store = ListsStore(fileURL: url)
+        let film = MediaItem(id: "tt1", kind: .movie, name: "Film")
+        let list = store.create("  Weekend  ", with: film)
+        #expect(store.list(list.id)?.name == "Weekend")
+        #expect(store.contains(film, in: list.id))
+        store.toggle(film, in: list.id)
+        #expect(!store.contains(film, in: list.id))
+        store.toggle(film, in: list.id)
+        store.saveNow()
+        Thread.sleep(forTimeInterval: 0.3)
+        let again = ListsStore(fileURL: url)
+        #expect(again.lists(containing: film).map(\.name) == ["Weekend"])
+    }
+}

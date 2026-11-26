@@ -241,7 +241,7 @@ final class AppSettings: ObservableObject {
     var isDebridConfigured: Bool { torrentio.hasDebrid }
 
     /// Torrentio needs a debrid service to give playable links; an addon may not.
-    var canFindSources: Bool { isDebridConfigured || addons.contains(where: \.enabled) }
+    var canFindSources: Bool { isDebridConfigured || addons.contains { $0.enabled && $0.hasStreams } }
 
     var sourceQuery: SourceQuery { SourceQuery(torrentio: torrentio, addons: addons, secondary: secondaryTorrentio) }
 

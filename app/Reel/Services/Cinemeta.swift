@@ -60,6 +60,12 @@ enum Cinemeta {
         return items
     }
 
+    /// Titles from any Stremio catalogue address: Cinemeta's own, or an addon's.
+    static func items(at url: URL, fallbackKind: MediaKind) async throws -> [MediaItem] {
+        let response = try await HTTP.get(url, as: CatalogResponse.self)
+        return response.metas.compactMap { $0.item(fallbackKind: fallbackKind) }
+    }
+
     static func search(_ query: String, kind: MediaKind) async throws -> [MediaItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return [] }
