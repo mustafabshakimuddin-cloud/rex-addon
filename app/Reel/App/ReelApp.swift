@@ -52,9 +52,12 @@ final class AppStores {
     let alerts = AlertCenter()
     let upcoming = UpcomingStore()
     let lists = ListsStore()
+    let profiles = ProfileStore()
     lazy var playback = PlaybackCenter(memory: memory, downloads: downloads)
 
     init() {
+        // The profile in use is settled before Trakt syncs, so its account fills its library.
+        if !profiles.current.isDefault { switchProfile(to: profiles.current) }
         trakt.attach(library)
         let alerts = alerts
         let settings = settings
@@ -73,6 +76,19 @@ final class AppStores {
                         level: .warning, action: .openStatus)
         }
         Self.current = self
+    }
+
+    /// Becomes someone else: their library, lists, player choices and Trakt account.
+    func switchProfile(to profile: Profile) {
+        playback.session = nil
+        playback.cancel()
+        profiles.select(profile)
+        library.load(from: profile.file("library"))
+        library.kidsOnly = profile.isKids
+        lists.load(from: profile.file("lists"))
+        trakt.switchProfile(profile)
+        router.homePath = NavigationPath()
+        router.libraryPath = NavigationPath()
     }
 
     /// Back in the foreground: sync, tidy downloads, and look at the debrid plan once a day.
@@ -156,6 +172,7 @@ struct ReelApp: App {
     @StateObject private var alerts: AlertCenter
     @StateObject private var upcoming: UpcomingStore
     @StateObject private var lists: ListsStore
+    @StateObject private var profiles: ProfileStore
     @Environment(\.scenePhase) private var scenePhase
     private let stores: AppStores
 
@@ -174,6 +191,7 @@ struct ReelApp: App {
         _alerts = StateObject(wrappedValue: stores.alerts)
         _upcoming = StateObject(wrappedValue: stores.upcoming)
         _lists = StateObject(wrappedValue: stores.lists)
+        _profiles = StateObject(wrappedValue: stores.profiles)
     }
 
     var body: some Scene {
@@ -189,6 +207,7 @@ struct ReelApp: App {
                 .environmentObject(alerts)
                 .environmentObject(upcoming)
                 .environmentObject(lists)
+                .environmentObject(profiles)
                 .preferredColorScheme(.dark)
                 .tint(settings.accent.accent)
                 .onOpenURL { stores.open($0) }

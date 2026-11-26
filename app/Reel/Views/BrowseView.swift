@@ -59,13 +59,6 @@ enum GridOrder: String, CaseIterable, Identifiable {
     }
 }
 
-extension Library {
-    /// The titles a list shows: all of them, or with films you've watched left out.
-    func shown(_ items: [MediaItem], hidingWatched: Bool) -> [MediaItem] {
-        guard hidingWatched else { return items }
-        return items.filter { $0.kind != .movie || !isWatched(PlaybackTarget(item: $0)) }
-    }
-}
 
 enum ExploreLayout: String, CaseIterable, Identifiable {
     case rows, grid
@@ -557,8 +550,8 @@ struct SearchView: View {
             async let s = asyncResult { try await Cinemeta.search(text, kind: .series) }
             let (foundMovies, foundSeries) = await (m, s)
             guard !Task.isCancelled else { return }
-            movies = (try? foundMovies.get()) ?? []
-            series = (try? foundSeries.get()) ?? []
+            movies = library.shown((try? foundMovies.get()) ?? [], hidingWatched: false)
+            series = library.shown((try? foundSeries.get()) ?? [], hidingWatched: false)
             // Both failing is an error worth showing; one failing still shows the other's titles.
             if case let .failure(error) = foundMovies, case .failure = foundSeries {
                 searchError = PlaybackError.describe(error)

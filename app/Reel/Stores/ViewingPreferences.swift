@@ -19,7 +19,8 @@ struct ViewingChoice: Codable, Equatable {
 
 /// Kept in UserDefaults: small, and a lost entry only means the settings' defaults apply.
 enum ViewingPreferences {
-    private static let key = "player.choices"
+    /// One set per profile.
+    private static var key: String { "player.choices" + ProfileStore.currentKeySuffix }
     private static let keep = 300
 
     static func choice(for titleID: String) -> ViewingChoice? {

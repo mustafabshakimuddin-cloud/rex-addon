@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject private var memory: SourceMemory
     @EnvironmentObject private var alerts: AlertCenter
     @EnvironmentObject private var router: AppRouter
+    @EnvironmentObject private var profiles: ProfileStore
     @State private var confirmForget = false
     @State private var keyDraft = ""
     @State private var secondKeyDraft = ""
@@ -29,6 +30,12 @@ struct SettingsView: View {
                         }
                         Spacer()
                         if Attention.settingsNeedAttention(settings: settings, trakt: trakt, alerts: alerts) { AttentionDot() }
+                    }
+                }
+                NavigationLink(value: SettingsPage.profiles) {
+                    HStack(spacing: 12) {
+                        ProfileBadge(profile: profiles.current, size: 30)
+                        LabeledContent("Profile", value: profiles.current.name)
                     }
                 }
                 Button {
@@ -256,6 +263,7 @@ struct SettingsView: View {
             case .homeScreen: HomeLayoutView()
             case .offline: OfflineSettingsView()
             case .backup: BackupView()
+            case .profiles: ProfilesView()
             }
         }
         .onAppear {

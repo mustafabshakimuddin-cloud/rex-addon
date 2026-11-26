@@ -108,6 +108,8 @@ struct HomeView: View {
         .scrollsToTopOnRetap(.home)
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .topTrailing) {
+            HStack(spacing: 10) {
+            ProfileSwitcher()
             Button { router.openSettings() } label: {
                 Image(systemName: "gearshape.fill").font(.headline).frame(width: 22, height: 22)
             }
@@ -118,6 +120,7 @@ struct HomeView: View {
                 }
             }
             .accessibilityLabel("Settings")
+            }
             .padding(.trailing, 16)
             .padding(.top, 4)
         }
@@ -138,8 +141,8 @@ struct HomeView: View {
     private func sectionView(_ section: HomeSection, metrics: CardMetrics, attention: Attention) -> some View {
         switch section {
         case .hero:
-            if !model.hero.isEmpty {
-                HeroCarousel(items: model.hero, width: width, maxHeight: height * 0.66)
+            if !library.shown(model.hero, hidingWatched: false).isEmpty {
+                HeroCarousel(items: library.shown(model.hero, hidingWatched: false), width: width, maxHeight: height * 0.66)
             } else if model.isLoading {
                 Rectangle().fill(Theme.surface).frame(height: heroHeight).redacted(reason: .placeholder)
             }

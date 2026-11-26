@@ -23,6 +23,8 @@ final class ListsStore: ObservableObject {
 
     /// Loads another profile's lists.
     func load(from fileURL: URL) {
+        saveNow()
+        writer.waitUntilWritten()
         writer = SnapshotWriter(url: fileURL)
         lists = JSONFile.read([Lossy<CustomList>].self, from: fileURL)?.compactMap(\.value) ?? []
     }

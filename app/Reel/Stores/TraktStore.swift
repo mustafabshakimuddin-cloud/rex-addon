@@ -38,20 +38,44 @@ final class TraktStore: ObservableObject {
     /// would sign the app out.
     private var refreshTask: Task<Trakt.Token?, Never>?
     private var flushTask: Task<Void, Never>?
-    private let queueWriter = SnapshotWriter(url: JSONFile.url("trakt-queue.json"))
+    private var queueWriter = SnapshotWriter(url: JSONFile.url("trakt-queue.json"))
+    /// The profile whose Trakt account this is.
+    private var profile = Profile(id: Profile.defaultID, name: "Me", symbol: "person.fill")
     private let defaults = UserDefaults.standard
 
-    private enum Keys {
+    /// The API application is shared by everyone on the device; the sign-in and what's waiting
+    /// to be sent belong to a profile.
+    private struct Keys {
         static let credentials = "trakt.credentials"
-        static let token = "trakt.token"
-        static let activities = "trakt.lastActivities"
+        let token: String
+        let activities: String
     }
+
+    private var keys: Keys { Keys(token: profile.key("trakt.token"), activities: profile.key("trakt.lastActivities")) }
 
     init() {
         credentials = Keychain.read(Keys.credentials).flatMap { try? JSONDecoder().decode(Trakt.Credentials.self, from: Data($0.utf8)) }
-        token = Keychain.read(Keys.token).flatMap { try? JSONDecoder().decode(Trakt.Token.self, from: Data($0.utf8)) }
+        token = Keychain.read(Profile(id: Profile.defaultID, name: "", symbol: "").key("trakt.token"))
+            .flatMap { try? JSONDecoder().decode(Trakt.Token.self, from: Data($0.utf8)) }
         isConnected = credentials != nil && token != nil
         pending = JSONFile.read([Lossy<TraktChange>].self, from: JSONFile.url("trakt-queue.json"))?.compactMap(\.value) ?? []
+    }
+
+    /// Signs in as another profile's Trakt account, or none: its token, its queue, a fresh sync.
+    func switchProfile(_ profile: Profile) {
+        saveQueue()
+        queueWriter.waitUntilWritten()
+        signInTask?.cancel()
+        refreshTask = nil
+        self.profile = profile
+        queueWriter = SnapshotWriter(url: profile.file("trakt-queue"))
+        pending = JSONFile.read([Lossy<TraktChange>].self, from: profile.file("trakt-queue"))?.compactMap(\.value) ?? []
+        token = Keychain.read(keys.token).flatMap { try? JSONDecoder().decode(Trakt.Token.self, from: Data($0.utf8)) }
+        isConnected = credentials != nil && token != nil
+        signIn = .idle
+        syncError = nil
+        lastSync = nil
+        if isConnected { Task { await sync() } }
     }
 
     func attach(_ library: Library) {
@@ -93,8 +117,8 @@ final class TraktStore: ObservableObject {
         syncError = nil
         pending = []
         saveQueue()
-        defaults.removeObject(forKey: Keys.activities)
-        Keychain.write("", for: Keys.token)
+        defaults.removeObject(forKey: keys.activities)
+        Keychain.write("", for: keys.token)
         library?.forgetTraktState()
     }
 
@@ -113,7 +137,7 @@ final class TraktStore: ObservableObject {
                     store(token)
                     signIn = .idle
                     syncError = nil
-                    defaults.removeObject(forKey: Keys.activities)
+                    defaults.removeObject(forKey: keys.activities)
                     await sync()
                     return
                 case let .failed(message):
@@ -139,7 +163,7 @@ final class TraktStore: ObservableObject {
         await flush()
         do {
             let activities = try await Trakt.lastActivities(credentials: credentials, token: token)
-            let previous = force ? [:] : (defaults.dictionary(forKey: Keys.activities) as? [String: String] ?? [:])
+            let previous = force ? [:] : (defaults.dictionary(forKey: keys.activities) as? [String: String] ?? [:])
             func changed(_ key: String) -> Bool { previous[key] == nil || previous[key] != activities[key] }
 
             async let watchlist = Self.fetch(if: changed("watchlist")) { try await Trakt.watchlist(credentials: credentials, token: token) }
@@ -154,7 +178,7 @@ final class TraktStore: ObservableObject {
                 library.importResume(entry.target, fraction: entry.fraction, runtime: entry.runtimeSeconds, at: entry.pausedAt)
             }
             if let history { library.setExternalWatched(movies: history.movies, episodes: history.episodes) }
-            defaults.set(activities, forKey: Keys.activities)
+            defaults.set(activities, forKey: keys.activities)
             lastSync = Date()
             syncError = nil
         } catch {
@@ -301,7 +325,7 @@ final class TraktStore: ObservableObject {
     private func store(_ token: Trakt.Token) {
         self.token = token
         isConnected = true
-        save(token, key: Keys.token)
+        save(token, key: keys.token)
     }
 
     private func save<T: Encodable>(_ value: T, key: String) {

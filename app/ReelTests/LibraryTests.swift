@@ -126,3 +126,35 @@ struct ListsTests {
         #expect(again.lists(containing: film).map(\.name) == ["Weekend"])
     }
 }
+
+@MainActor
+struct ProfileTests {
+    @Test func defaultProfileKeepsOldFileNames() {
+        let me = Profile(id: Profile.defaultID, name: "Me", symbol: "person.fill")
+        #expect(me.file("library").lastPathComponent == "library.json")
+        #expect(me.key("trakt.token") == "trakt.token")
+        let kid = Profile(id: "abc", name: "Kid", symbol: "star.fill", isKids: true)
+        #expect(kid.file("library").lastPathComponent == "library-abc.json")
+        #expect(kid.key("player.choices") == "player.choices.abc")
+    }
+
+    @Test func kidsSeeFamilyAndAnimationOnly() {
+        let library = Library(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("k-\(UUID().uuidString).json"))
+        let items = [MediaItem(id: "tt1", kind: .movie, name: "Cartoon", genres: ["Animation"]),
+                     MediaItem(id: "tt2", kind: .movie, name: "Slasher", genres: ["Horror"])]
+        library.kidsOnly = true
+        #expect(library.shown(items, hidingWatched: false).map(\.id) == ["tt1"])
+    }
+
+    @Test func switchingLoadsAnotherLibrary() {
+        let first = FileManager.default.temporaryDirectory.appendingPathComponent("a-\(UUID().uuidString).json")
+        let second = FileManager.default.temporaryDirectory.appendingPathComponent("b-\(UUID().uuidString).json")
+        let library = Library(fileURL: first)
+        library.toggleWatchlist(MediaItem(id: "tt1", kind: .movie, name: "Film"))
+        library.load(from: second)
+        #expect(library.watchlist.isEmpty)
+        library.load(from: first)
+        library.waitForSave()
+        #expect(library.watchlist.map(\.id) == ["tt1"])
+    }
+}

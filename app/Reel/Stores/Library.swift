@@ -58,8 +58,10 @@ final class Library: ObservableObject {
     /// Told when titles are marked watched (true) or unwatched (false) by hand.
     var onWatchedChange: (([PlaybackTarget], Bool) -> Void)?
 
-    private let fileURL: URL
-    private let writer: SnapshotWriter
+    private var fileURL: URL
+    private var writer: SnapshotWriter
+    /// Only family and animation titles in lists and rows: a kids profile.
+    @Published var kidsOnly = false
     private var cache = Cache()
 
     private struct Cache {
@@ -72,16 +74,31 @@ final class Library: ObservableObject {
     init(fileURL: URL = JSONFile.url("library.json")) {
         self.fileURL = fileURL
         writer = SnapshotWriter(url: fileURL)
-        if let saved = JSONFile.read(Saved.self, from: fileURL) {
-            watchlist = saved.watchlist
-            progress = saved.progress
-            rawExternalWatched = saved.externalWatched
-            unwatchedOverrides = saved.unwatchedOverrides
-            traktWatchlist = saved.traktWatchlist
-            upNext = saved.upNext
-            dismissedUpNext = saved.dismissedUpNext
-            externalWatched = rawExternalWatched.subtracting(unwatchedOverrides.keys)
-        }
+        if let saved = JSONFile.read(Saved.self, from: fileURL) { apply(saved) }
+    }
+
+    /// Switches to another profile's library: what was here is saved first.
+    func load(from fileURL: URL) {
+        // The outgoing profile's file must be on disk before anything reads it again.
+        saveNow()
+        writer.waitUntilWritten()
+        objectWillChange.send()
+        self.fileURL = fileURL
+        writer = SnapshotWriter(url: fileURL)
+        knownEpisodes = [:]
+        apply(JSONFile.read(Saved.self, from: fileURL) ?? Saved(version: Self.fileVersion, watchlist: [], progress: [:], externalWatched: [],
+                                                               unwatchedOverrides: [:], traktWatchlist: nil, upNext: [:], dismissedUpNext: [:]))
+    }
+
+    private func apply(_ saved: Saved) {
+        watchlist = saved.watchlist
+        progress = saved.progress
+        rawExternalWatched = saved.externalWatched
+        unwatchedOverrides = saved.unwatchedOverrides
+        traktWatchlist = saved.traktWatchlist
+        upNext = saved.upNext
+        dismissedUpNext = saved.dismissedUpNext
+        externalWatched = rawExternalWatched.subtracting(unwatchedOverrides.keys)
     }
 
     // MARK: Watchlist
@@ -470,5 +487,16 @@ final class Library: ObservableObject {
         dismissedUpNext = saved.dismissedUpNext
         externalWatched = rawExternalWatched.subtracting(unwatchedOverrides.keys)
         saveNow()
+    }
+}
+
+extension Library {
+    /// The titles a list shows: all of them, or with films you've watched left out.
+    func shown(_ items: [MediaItem], hidingWatched: Bool) -> [MediaItem] {
+        var items = items
+        // A kids profile sees family and animation titles only.
+        if kidsOnly { items = items.filter { $0.genres.contains("Family") || $0.genres.contains("Animation") } }
+        guard hidingWatched else { return items }
+        return items.filter { $0.kind != .movie || !isWatched(PlaybackTarget(item: $0)) }
     }
 }

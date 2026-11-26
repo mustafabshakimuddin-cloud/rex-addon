@@ -6,7 +6,7 @@ enum AppTab: Hashable {
 
 /// Pages inside Settings that other screens can open directly (a Status fix, an alert).
 enum SettingsPage: Hashable {
-    case status, pickRules, addons, trakt, appearance, homeScreen, offline, backup
+    case status, pickRules, addons, trakt, appearance, homeScreen, offline, backup, profiles
 }
 
 /// Pages that hang off Library, and that Home's "Waiting on You" cards open.
