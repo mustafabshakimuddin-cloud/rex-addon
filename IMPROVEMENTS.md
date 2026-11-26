@@ -409,35 +409,35 @@ Effort: **S** is under half a day, **M** is one to two days, **L** is three days
 
 ---
 
-## Status (25 November 2026)
+## Status (26 November 2026)
 
-**Done** on `claude/app-improvements-brainstorm-kyif5y`: every bug, B1–B29, plus one the new tests
-found (a Torrentio provider name swallowed the language flags on the next line); P1–P10 and P12; F1–F11, F14–F17, F21 (plan expiry; the cloud browser is not done), F22 (Trakt trending and
-recommended rows; no TMDB), F23 (ratings; not personal lists), F24, F25, F27, F28, F31, F33, F34,
-F35, F36, F37, F38, F39, F40, F43; T1, T2, T4, T5 (redacted log in Status); the README.
+Everything in this plan is done on `claude/app-improvements-brainstorm-kyif5y`, except iCloud sync
+(F29), which was left out on request, and the items below. Every bug B1–B29 is fixed, plus two the
+new tests found: a Torrentio provider name that swallowed the language flags, and a race when
+switching profiles quickly.
 
 **Changed from the plan**
 
-- **B28** (60-second marks in "Hours watched"): marked entries are now flagged and left out of it.
-- **P1**: done without `@Observable`: positions recorded while the player is open no longer
-  publish, so the screens behind it stay still; derived lists are cached per library revision.
+- **F20** (debrid sign-in without a key): not done. Real-Debrid had to keep working with an API
+  key, and a sign-in token expires within hours, so Torrentio links built from it would stop
+  working; the key stays the way in.
 - **T6** (narrower App Transport Security): kept `NSAllowsArbitraryLoads`, because downloads and
-  self-hosted addons over plain HTTP would stop working. Instead, Status and Stremio Addons warn
-  about an addon whose address isn't encrypted.
-- **T7** (keep the last three releases): not changed. The workflow keeps only the newest build
-  on purpose, so stores that read releases list one version. Release notes now list every commit
+  self-hosted addons over plain HTTP would stop working. Status and Stremio Addons warn about an
+  addon whose address isn't encrypted instead.
+- **T7** (keep the last three releases): not changed. The workflow keeps only the newest build on
+  purpose, so stores that read releases list one version. Release notes now list every commit
   since the previous build.
-- **F20** (debrid sign-in without a key): not done, as asked. The API key stays the way in.
+- **F22**: recommendations come from Trakt's related titles rather than TMDB; TMDB (F26) is used for
+  cast photos and biographies, with an optional key.
+- **F41**: Simplified Chinese, Spanish, French and German. Messages built at run time (errors,
+  Status details, counts) are still in English.
+- **F42**: the kids profile filters by genre (family and animation): the catalogue has no age
+  ratings to go by.
+- **P1/T3**: the stores are `@Observable` and the project builds in the Swift 6 language mode. The
+  library tracks one change counter, so positions recorded during playback don't redraw the
+  screens behind the player.
 
-**Not done**, with why
-
-- **F12** night mode and **F13** stream stats: need AetherEngine APIs that couldn't be checked
-  without a Mac.
-- **F18** addon catalogues, **F19** a second debrid service, **F29** iCloud sync, **F30** custom
-  lists, **F42** profiles: each is a large feature of its own.
-- **F26** cast photos and TMDB recommendations: need a TMDB key setting and client.
-- **F32** widgets and Live Activities: need an app extension and an app group, which sideloading
-  with a free Apple ID makes fragile.
-- **F41** localisation, **T3** Swift 6 and `@Observable`, **T8–T11**: large mechanical changes best
-  done on their own, with a Mac to check them.
-- **P11** image prefetching: small gain.
+**How it was checked**: the logic tests (30) run on Linux and on an iOS simulator in CI; both iOS
+builds pass in Swift 6; CI launches ten screens on two simulators with mock data. Nothing has been
+tried on a device: the debrid cloud page, the second debrid service, Live Activities and widgets
+need a real account and phone to confirm.
