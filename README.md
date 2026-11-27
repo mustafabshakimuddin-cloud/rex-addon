@@ -4,6 +4,9 @@
   series and streaming them through Torrentio, Stremio addons and your debrid service. Install it from the
   SideStore / AltStore source:
   `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/latest/source.json`
+- **[`android/`](android/README.md): Reel for Android and Android TV**, the same app in Kotlin, one
+  APK for phones, tablets and TVs:
+  `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/android-latest/Reel.apk`
 - **`rex.torrentio.js`**: a module for the Rex player (below). Rex 1.1 does not play streams from
   imported modules, which is why the app exists.
 

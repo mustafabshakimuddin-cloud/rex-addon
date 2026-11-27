@@ -321,6 +321,9 @@ fun PlayerScreen(session: PlayerSession) {
         }
     }
 
+    // The system back gesture: an open panel first, then the player.
+    androidx.activity.compose.BackHandler { if (panel != null) panel = null else close() }
+
     val inPip = PipState.active
     Box(Modifier.fillMaxSize().background(Color.Black).onSizeChanged { size = it }
         .focusRequester(focus).focusable()

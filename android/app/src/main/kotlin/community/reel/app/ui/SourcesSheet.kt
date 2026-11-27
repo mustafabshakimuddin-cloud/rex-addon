@@ -231,7 +231,7 @@ fun SourcesSheet(target: PlaybackTarget) {
                 scope.launch { model.load(target, playback, settings.sourceQuery, refresh = true) }
             }
             model.sources.isEmpty() -> StateMessage("No sources", "Nothing was found with your current filters and addons.", icon = Icons.Rounded.Inbox)
-            else -> LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            else -> LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 40.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (!settings.isDebridConfigured) item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Info, null, tint = Theme.secondaryText); Spacer(Modifier.width(8.dp))

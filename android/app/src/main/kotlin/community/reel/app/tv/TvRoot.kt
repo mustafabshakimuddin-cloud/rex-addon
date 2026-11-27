@@ -64,7 +64,11 @@ fun TvRoot() {
     RootEffects()
     LaunchedEffect(Unit) { runCatching { content.requestFocus() } }
 
-    Backdrop {
+    // On TV nothing is drawn beneath Settings, Setup or the player, so the remote's focus can't
+    // wander onto a screen that isn't showing.
+    val covered = router.showingSettings || router.showingSetup || stores.playback.observe().session != null
+
+    if (!covered) Backdrop {
         NavigationDrawer(drawerState = drawer, drawerContent = { value ->
             Column(Modifier.fillMaxHeight().padding(vertical = 27.dp, horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 NavigationDrawerItem(selected = false, onClick = { router.openSettings(community.reel.app.ui.SettingsPage.PROFILES) },

@@ -7,6 +7,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,8 +88,10 @@ fun RootScreen() {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
 
     RootEffects()
+    // Under Settings and Setup the tabs aren't drawn at all, so nothing beneath can take a tap or focus.
+    val covered = router.showingSettings || router.showingSetup
 
-    Backdrop {
+    if (!covered) Backdrop {
         if (wide) {
             Row(Modifier.fillMaxSize()) {
                 NavigationRail(Modifier.statusBarsPadding(), containerColor = Theme.background.copy(alpha = 0.6f)) {
@@ -226,8 +230,10 @@ fun RouteScreen(route: Route) {
 /** A layer over the whole app: Settings, Setup, the player. */
 @Composable
 fun FullScreen(dark: Boolean = false, content: @Composable () -> Unit) {
-    if (dark) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) { content() }
-    else Backdrop { content() }
+    // Taps on an empty part of the layer stop here instead of reaching the screen underneath.
+    val block = Modifier.pointerInput(Unit) { detectTapGestures { } }
+    if (dark) Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black).then(block)) { content() }
+    else Backdrop(block) { content() }
 }
 
 @Composable
