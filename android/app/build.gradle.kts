@@ -18,13 +18,24 @@ android {
         versionName = "0.1.$build"
     }
 
+    // A stable key keeps updates installing over the previous build. CI writes it from repository
+    // secrets (see android/README.md); without them a build is signed with the debug key.
+    val keystore = System.getenv("REEL_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    signingConfigs {
+        if (keystore != null) create("release") {
+            storeFile = keystore
+            storePassword = System.getenv("REEL_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("REEL_KEY_ALIAS") ?: "reel"
+            keyPassword = System.getenv("REEL_KEY_PASSWORD") ?: System.getenv("REEL_KEYSTORE_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key unless CI provides a release key, so every build installs.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystore != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 

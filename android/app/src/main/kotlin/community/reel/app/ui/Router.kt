@@ -16,7 +16,9 @@ enum class AppTab(val title: String) { HOME("Home"), EXPLORE("Explore"), CALENDA
 /** Pages inside Settings that other screens can open directly (a Status fix, an alert). */
 enum class SettingsPage(val raw: String) {
     STATUS("status"), PICK_RULES("pickRules"), ADDONS("addons"), TRAKT("trakt"), APPEARANCE("appearance"),
-    HOME_SCREEN("homeScreen"), OFFLINE("offline"), BACKUP("backup"), PROFILES("profiles");
+    HOME_SCREEN("homeScreen"), OFFLINE("offline"), BACKUP("backup"), PROFILES("profiles"),
+    // Pages only Settings itself opens.
+    TMDB("tmdb"), GROUPS("groups"), HIDE_QUALITIES("hideQualities"), PROVIDERS("providers"), LANGUAGES("languages");
     companion object { fun of(raw: String) = entries.firstOrNull { it.raw == raw } }
 }
 
@@ -33,6 +35,7 @@ sealed interface Route {
     data object Downloads : Route
     data object History : Route
     data object Cloud : Route
+    data class CloudFiles(val entry: community.reel.core.DebridCloud.Entry) : Route
     /** "See All" on a shelf: a grid of the whole catalogue. */
     data class Grid(val title: String, val kind: MediaKind, val catalog: community.reel.core.Cinemeta.Catalog, val genre: String?) : Route
     data class AddonGrid(val addon: community.reel.core.StreamAddon, val catalog: community.reel.core.AddonCatalog) : Route

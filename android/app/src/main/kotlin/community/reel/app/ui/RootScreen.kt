@@ -85,23 +85,7 @@ fun RootScreen() {
     val attention = Attention(settings, library, trakt, upcoming)
     val wide = LocalConfiguration.current.screenWidthDp >= 600
 
-    BackHandler(enabled = playback.session == null && !router.showingSetup) { if (!router.back()) (context as? android.app.Activity)?.moveTaskToBack(true) }
-
-    LaunchedEffect(Unit) {
-        if (!ScreenshotTour.isActive && !settings.setupFinished) {
-            // First launch: walk through setup before anything else.
-            delay(400)
-            router.showingSetup = true
-        }
-    }
-    LaunchedEffect(UpcomingStore.followedSeries(library).map { it.id }) {
-        upcoming.refresh(library)
-        if (settings.notifyNewEpisodes) Notifier.scheduleEpisodes(context, upcoming.upcoming)
-        Widgets.publish(context, stores)
-    }
-    LaunchedEffect(trakt.syncError) {
-        trakt.syncError?.let { stores.alerts.post("Trakt sync stopped".tr(), it, AppAlert.Level.WARNING, AppAlert.Action.OPEN_TRAKT) }
-    }
+    RootEffects()
 
     Backdrop {
         if (wide) {
@@ -130,6 +114,53 @@ fun RootScreen() {
         AlertToast(Modifier.align(Alignment.TopCenter))
     }
 
+    RootOverlays()
+}
+
+@Composable
+fun TabIcon(tab: AppTab, attention: Attention) {
+    if (tab == AppTab.HOME && attention.badgeCount > 0) BadgedBox(badge = { Badge(containerColor = Theme.attention) { Text("${attention.badgeCount}") } }) { Icon(tabIcon(tab), null) }
+    else Icon(tabIcon(tab), null)
+}
+
+/** What both the phone and TV layouts run: back, first-run setup, the calendar refresh and alerts. */
+@Composable
+fun RootEffects() {
+    val stores = Env.stores
+    val router = Env.router
+    val context = LocalContext.current
+    val settings = stores.settings
+    val library = stores.library.observe()
+    val trakt = stores.trakt.observe()
+    val upcoming = stores.upcoming
+    val playback = stores.playback.observe()
+    BackHandler(enabled = playback.session == null && !router.showingSetup) { if (!router.back()) (context as? android.app.Activity)?.moveTaskToBack(true) }
+
+    LaunchedEffect(Unit) {
+        if (!ScreenshotTour.isActive && !settings.setupFinished) {
+            // First launch: walk through setup before anything else.
+            delay(400)
+            router.showingSetup = true
+        }
+    }
+    LaunchedEffect(UpcomingStore.followedSeries(library).map { it.id }) {
+        upcoming.refresh(library)
+        if (settings.notifyNewEpisodes) Notifier.scheduleEpisodes(context, upcoming.upcoming)
+        Widgets.publish(context, stores)
+    }
+    LaunchedEffect(trakt.syncError) {
+        trakt.syncError?.let { stores.alerts.post("Trakt sync stopped".tr(), it, AppAlert.Level.WARNING, AppAlert.Action.OPEN_TRAKT) }
+    }
+
+}
+
+/** Settings, Setup, the source list, the player and the app's dialogs, over either layout. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RootOverlays() {
+    val stores = Env.stores
+    val router = Env.router
+    val playback = stores.playback.observe()
     if (router.showingSettings) FullScreen { SettingsRoot() }
     if (router.showingSetup) FullScreen { SetupScreen() }
     playback.choosingSource?.let { target ->
@@ -158,12 +189,6 @@ fun RootScreen() {
     }
 }
 
-@Composable
-private fun TabIcon(tab: AppTab, attention: Attention) {
-    if (tab == AppTab.HOME && attention.badgeCount > 0) BadgedBox(badge = { Badge(containerColor = Theme.attention) { Text("${attention.badgeCount}") } }) { Icon(tabIcon(tab), null) }
-    else Icon(tabIcon(tab), null)
-}
-
 /** A tab: its first screen, or the page on top of its stack. */
 @Composable
 fun TabContent(tab: AppTab) {
@@ -190,6 +215,7 @@ fun RouteScreen(route: Route) {
             Route.Downloads -> DownloadsScreen()
             Route.History -> HistoryScreen()
             Route.Cloud -> DebridCloudScreen()
+            is Route.CloudFiles -> CloudFilesScreen(route.entry)
             is Route.Grid -> CatalogGridScreen(route)
             is Route.AddonGrid -> AddonCatalogGridScreen(route)
             is Route.Settings -> SettingsPageScreen(route.page)
@@ -205,7 +231,7 @@ fun FullScreen(dark: Boolean = false, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun PreparingHUD(modifier: Modifier) {
+fun PreparingHUD(modifier: Modifier) {
     val playback = Env.stores.playback.observe()
     AnimatedVisibility(playback.preparing != null, modifier, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
         val target = playback.preparing ?: return@AnimatedVisibility

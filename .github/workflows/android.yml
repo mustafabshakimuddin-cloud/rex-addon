@@ -1,0 +1,149 @@
+name: Android app
+
+on:
+  push:
+    branches: [ main, "claude/**" ]
+    paths: [ "android/**", "app/Reel/Localizable.xcstrings", ".github/workflows/android.yml" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a work branch replaces the run in progress; builds of main always finish.
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" >/dev/null
+
+      # The translations come from the iOS String Catalog; a change there must be carried over.
+      - name: Translations up to date
+        run: |
+          python3 tools/strings.py
+          git diff --exit-code app/src/main/assets/strings.json || { echo "::error::Run python3 android/tools/strings.py and commit the result."; exit 1; }
+
+      - name: Logic tests
+        run: ./gradlew :core:test --stacktrace
+
+      # Signed with the key in the repository secrets when they are set, so each build installs
+      # over the last; otherwise with a debug key (uninstall before updating).
+      - name: Build
+        env:
+          KEYSTORE: ${{ secrets.REEL_KEYSTORE_BASE64 }}
+          REEL_KEYSTORE_PASSWORD: ${{ secrets.REEL_KEYSTORE_PASSWORD }}
+          REEL_KEY_ALIAS: ${{ secrets.REEL_KEY_ALIAS }}
+          REEL_KEY_PASSWORD: ${{ secrets.REEL_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/reel.keystore"
+            export REEL_KEYSTORE_FILE="$RUNNER_TEMP/reel.keystore"
+          else
+            echo "::warning::No REEL_KEYSTORE_BASE64 secret: this build is signed with a debug key, so it won't install over an earlier one."
+          fi
+          ./gradlew :app:assembleRelease :app:assembleDebug -Preel.build=${{ github.run_number }} --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk Reel.apk
+          cp app/build/outputs/apk/debug/app-debug.apk Reel-debug.apk
+          ls -lh Reel.apk Reel-debug.apk
+
+      - name: Show test results
+        if: failure()
+        run: find core/build/test-results -name "*.xml" -exec grep -l "<failure" {} \; | xargs -r cat | head -200
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reel-apk
+          path: |
+            android/Reel.apk
+            android/Reel-debug.apk
+          retention-days: 30
+
+  # Launches the app on a phone and an Android TV emulator with mock data and screenshots each
+  # screen, so a launch crash or broken layout shows up here rather than on someone's device.
+  emulator:
+    name: Launch on ${{ matrix.kind }}
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: phone
+            target: google_apis
+            profile: pixel_7
+          - kind: tv
+            target: android-tv
+            profile: tv_1080p
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Reel-apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Launch and screenshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: ${{ matrix.target }}
+          arch: x86_64
+          profile: ${{ matrix.profile }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: android/tools/screenshots.sh Reel.apk shots ${{ matrix.kind }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-${{ matrix.kind }}-screenshots
+          path: shots/
+          retention-days: 14
+
+  # Builds from main are published to a rolling "android-latest" release holding Reel.apk, so
+  # https://github.com/<owner>/<repo>/releases/download/android-latest/Reel.apk always names the
+  # newest build. It is a pre-release, so GitHub's "latest" stays the iOS build.
+  release:
+    name: Publish the APK
+    needs: [ build, emulator ]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Reel-apk
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          NOTES="Reel for Android, phones, tablets and Android TV. Build 0.1.$BUILD from ${GITHUB_SHA::7}."$'\n\n'"Install Reel.apk; on Android TV, sideload it with a file manager or adb."
+          if gh release view android-latest >/dev/null 2>&1; then
+            gh release upload android-latest Reel.apk --clobber
+            gh release edit android-latest --title "Reel for Android 0.1.$BUILD" --notes "$NOTES" --prerelease
+          else
+            gh release create android-latest Reel.apk --title "Reel for Android 0.1.$BUILD" --notes "$NOTES" --prerelease --latest=false --target "$GITHUB_SHA"
+          fi

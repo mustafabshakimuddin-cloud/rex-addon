@@ -51,11 +51,15 @@ fun Page(title: String, large: Boolean = false, onBack: (() -> Unit)? = null, ac
     }
 }
 
+/** Where a pushed page's back button goes, when not the router's own stack (Setup's pages). */
+val LocalBack = androidx.compose.runtime.compositionLocalOf<(() -> Unit)?> { null }
+
 /** A pushed page: the back button pops it. */
 @Composable
 fun PushedPage(title: String, actions: @Composable RowScope.() -> Unit = {}, content: @Composable () -> Unit) {
     val router = Env.router
-    Page(title, large = false, onBack = { router.back() }, actions = actions, content = content)
+    val back = LocalBack.current ?: { router.back(); Unit }
+    Page(title, large = false, onBack = back, actions = actions, content = content)
 }
 
 @Composable
