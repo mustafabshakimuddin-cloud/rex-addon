@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Files the share sheet hands to other apps: backups and calendar exports, written to the cache. -->
+<paths><cache-path name="shared" path="shared/" /></paths>

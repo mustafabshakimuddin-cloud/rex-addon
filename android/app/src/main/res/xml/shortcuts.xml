@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon: the counterparts of the iOS Shortcuts actions. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="continue" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/shortcut_continue">
+        <intent android:action="android.intent.action.VIEW" android:data="reel://continue" android:targetPackage="community.reel.app" android:targetClass="community.reel.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="search" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/shortcut_search">
+        <intent android:action="android.intent.action.VIEW" android:data="reel://search/" android:targetPackage="community.reel.app" android:targetClass="community.reel.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="downloads" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/shortcut_downloads">
+        <intent android:action="android.intent.action.VIEW" android:data="reel://downloads" android:targetPackage="community.reel.app" android:targetClass="community.reel.app.MainActivity" />
+    </shortcut>
+</shortcuts>

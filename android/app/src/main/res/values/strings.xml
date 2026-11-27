@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reel</string>
+    <string name="widget_continue">Continue Watching</string>
+    <string name="widget_continue_description">Pick up where you left off.</string>
+    <string name="widget_upcoming">Next Episodes</string>
+    <string name="widget_upcoming_description">When the series you follow come back.</string>
+    <string name="shortcut_continue">Continue Watching</string>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_downloads">Downloads</string>
+</resources>
