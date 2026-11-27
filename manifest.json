@@ -10,7 +10,7 @@
       "requiredVersion": "0.0.2",
       "description": "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放",
       "author": "Community",
-      "url": "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main/rex.torrentio.js",
+      "url": "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/Reel-Media-Center/main/rex.torrentio.js",
       "i18n": {
         "en": {
           "Torrentio 种子资源，支持 Real-Debrid、AllDebrid、Premiumize、TorBox 等网盘直链播放": "Torrent streams from Torrentio, playable through Real-Debrid, AllDebrid, Premiumize, TorBox and other debrid services"

@@ -127,7 +127,7 @@ jobs:
 
   # Builds from main are also published to a rolling "latest" release, which gives the .ipa a
   # permanent direct link that needs no GitHub sign-in and opens straight in AltStore/Sideloadly:
-  #   https://github.com/<owner>/rex-addon/releases/download/latest/Reel.ipa
+  #   https://github.com/<owner>/Reel-Media-Center/releases/download/latest/Reel.ipa
   release:
     name: Publish the release and the SideStore source
     needs: build

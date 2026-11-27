@@ -9,7 +9,7 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const RAW = "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main";
+const RAW = "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/Reel-Media-Center/main";
 const file = "rex.torrentio.js";
 const meta = new Function(fs.readFileSync(path.join(root, file), "utf8") + "\nreturn WidgetMetadata;")();
 

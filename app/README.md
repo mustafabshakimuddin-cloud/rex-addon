@@ -16,7 +16,7 @@ service. "Reel" is a working name: change `AppConfig.name` and `CFBundleDisplayN
 **SideStore, AltStore or Feather (recommended).** Add this source, then install Reel from it:
 
 ```
-https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/download/latest/source.json
+https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/latest/source.json
 ```
 
 The store shows each new build as an update. Every push to `main` publishes one: a release
@@ -24,7 +24,7 @@ The store shows each new build as an update. Every push to `main` publishes one:
 release holding only `source.json`. Only the newest build is ever listed. `tools/make_source.py` writes the source and keeps the last few versions.
 
 **By hand.** Download the newest build,
-<https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/latest/download/Reel.ipa>, and
+<https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/Reel.ipa>, and
 install it with Sideloadly.
 
 With a free Apple ID a signature lasts 7 days; SideStore and AltStore refresh it in the background.

@@ -15,8 +15,8 @@ import hashlib
 import json
 import os
 
-REPO = "https://github.com/mustafabshakimuddin-cloud/rex-addon"
-RAW = "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/rex-addon/main"
+REPO = "https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center"
+RAW = "https://raw.githubusercontent.com/mustafabshakimuddin-cloud/Reel-Media-Center/main"
 # The release job deletes older releases, so only the newest download link stays valid.
 KEEP = 1
 TINT = "FF4FA3"

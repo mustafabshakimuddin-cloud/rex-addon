@@ -1,9 +1,9 @@
-# rex-addon
+# Reel-Media-Center
 
 - **[`app/`](app/README.md): Reel**, an iOS app (iPhone, iPad, iPhone Duo) for browsing films and
   series and streaming them through Torrentio, Stremio addons and your debrid service. Install it from the
   SideStore / AltStore source:
-  `https://github.com/mustafabshakimuddin-cloud/rex-addon/releases/download/latest/source.json`
+  `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/latest/source.json`
 - **`rex.torrentio.js`**: a module for the Rex player (below). Rex 1.1 does not play streams from
   imported modules, which is why the app exists.
 
