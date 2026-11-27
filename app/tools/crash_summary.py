@@ -29,7 +29,8 @@ def main(path):
     thread = threads[index]
     print("thread", index, thread.get("queue", ""), thread.get("name", ""))
     for number, frame in enumerate(thread.get("frames", [])[:40]):
-        image = images[frame["imageIndex"]].get("name", "?") if frame.get("imageIndex", -1) < len(images) else "?"
+        index = frame.get("imageIndex", -1)
+        image = images[index].get("name", "?") if 0 <= index < len(images) else "?"
         symbol = frame.get("symbol", hex(frame.get("imageOffset", 0)))
         print(f"  {number:2} {image:28} {symbol}")
 

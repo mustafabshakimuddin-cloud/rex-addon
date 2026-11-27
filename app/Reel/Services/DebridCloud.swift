@@ -191,11 +191,17 @@ enum DebridCloud {
     }
 
     private static func jsonObject(_ request: URLRequest) async throws -> [String: Any] {
-        (try JSONSerialization.jsonObject(with: await data(request))) as? [String: Any] ?? [:]
+        let body = try await data(request)
+        guard !body.isEmpty else { return [:] }
+        return (try JSONSerialization.jsonObject(with: body)) as? [String: Any] ?? [:]
     }
 
+    /// An account with nothing in it answers 204 with no body (Real-Debrid does): that is an empty
+    /// list, not an error.
     private static func jsonArray(_ request: URLRequest) async throws -> [[String: Any]] {
-        (try JSONSerialization.jsonObject(with: await data(request))) as? [[String: Any]] ?? []
+        let body = try await data(request)
+        guard !body.isEmpty else { return [] }
+        return (try JSONSerialization.jsonObject(with: body)) as? [[String: Any]] ?? []
     }
 
     private static func encoded(_ text: String) -> String {

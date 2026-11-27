@@ -21,7 +21,7 @@ https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download
 
 The store shows each new build as an update. Every push to `main` publishes one: a release
 `v0.1.N` holding that build's `.ipa`, which replaces the previous one, and the rolling `latest`
-release holding only `source.json`. Only the newest build is ever listed. `tools/make_source.py` writes the source and keeps the last few versions.
+release holding only `source.json`. Only the newest build is ever listed. `tools/make_source.py` writes the source, listing just that version.
 
 **By hand.** Download the newest build,
 <https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/Reel.ipa>, and

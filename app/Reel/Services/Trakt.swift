@@ -338,7 +338,9 @@ enum Trakt {
         let episode: EpisodeRef?
 
         var resume: Resume? {
-            let pausedAt = paused_at.flatMap { ISO8601DateFormatter.trakt.date(from: $0) } ?? Date()
+            // A stamp that can't be read counts as long ago, not as now: "now" would beat every
+            // resume point recorded on this device.
+            let pausedAt = paused_at.flatMap(ISO8601DateFormatter.traktDate) ?? .distantPast
             if type == "movie", let movie, let id = movie.ids.imdb {
                 return Resume(target: PlaybackTarget(item: Trakt.item(id: id, kind: .movie, work: movie)),
                               fraction: progress / 100, runtimeSeconds: Double(movie.runtime ?? 110) * 60, pausedAt: pausedAt)
@@ -415,4 +417,15 @@ extension ISO8601DateFormatter {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+
+    nonisolated(unsafe) static let traktWhole: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    /// Trakt's stamps carry milliseconds ("2015-01-25T22:01:32.000Z"), but not always.
+    static func traktDate(_ text: String) -> Date? {
+        trakt.date(from: text) ?? traktWhole.date(from: text)
+    }
 }

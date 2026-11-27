@@ -81,9 +81,11 @@ def main() -> None:
         "category": "entertainment",
         "screenshots": [f"{RAW}/app/store/{name}.jpg" for name in ("home", "detail", "movies")],
         "versions": versions,
-        # The app declares no entitlements of its own and asks for no protected data; the
-        # signing store adds its own application identifier and team.
-        "appPermissions": {"entitlements": [], "privacy": {}},
+        # Every entitlement the .ipa is signed with must be listed: AltStore and SideStore refuse
+        # an install whose app asks for one the source didn't declare. The app and its widgets
+        # share an app group (Reel/Reel.entitlements); the signing store adds its own application
+        # identifier and team. No protected data is asked for, so no privacy keys.
+        "appPermissions": {"entitlements": ["com.apple.security.application-groups"], "privacy": {}},
         # Fields read by older AltStore and SideStore releases.
         "version": entry["version"],
         "versionDate": entry["date"],

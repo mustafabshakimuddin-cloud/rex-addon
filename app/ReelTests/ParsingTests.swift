@@ -167,3 +167,34 @@ struct MockTests {
         #expect(String(data: series.2, encoding: .utf8)?.contains("videos") == true)
     }
 }
+
+struct WireFormatTests {
+    private struct Numbered: Decodable {
+        let value: Int?
+        enum CodingKeys: String, CodingKey { case value }
+        init(from decoder: Decoder) throws {
+            value = try decoder.container(keyedBy: CodingKeys.self).flexInt(.value)
+        }
+    }
+
+    private func number(_ json: String) throws -> Int? {
+        try JSONDecoder().decode(Numbered.self, from: Data(json.utf8)).value
+    }
+
+    /// An addon's season or episode number may arrive as text, a float, or a value no Int can
+    /// hold; the last must be dropped, not stop the app.
+    @Test func flexibleNumbers() throws {
+        #expect(try number(#"{"value": 3}"#) == 3)
+        #expect(try number(#"{"value": "4"}"#) == 4)
+        #expect(try number(#"{"value": 5.0}"#) == 5)
+        #expect(try number(#"{"value": 1e300}"#) == nil)
+        #expect(try number(#"{}"#) == nil)
+    }
+
+    @Test func traktStampsWithAndWithoutMilliseconds() throws {
+        let precise = try #require(ISO8601DateFormatter.traktDate("2015-01-25T22:01:32.000Z"))
+        let whole = try #require(ISO8601DateFormatter.traktDate("2015-01-25T22:01:32Z"))
+        #expect(precise == whole)
+        #expect(ISO8601DateFormatter.traktDate("yesterday") == nil)
+    }
+}

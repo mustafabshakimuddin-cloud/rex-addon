@@ -40,6 +40,12 @@ final class TraktStore {
     /// would sign the app out.
     private var refreshTask: Task<Trakt.Token?, Never>?
     private var flushTask: Task<Void, Never>?
+    /// The send in progress: two at once would both send the head of the queue, then each remove
+    /// one entry, dropping a change that was never sent.
+    private var sendTask: Task<Void, Never>?
+    /// Moves on every profile switch, so work begun for one account never lands in another's
+    /// library, queue or keys.
+    private var generation = 0
     private var queueWriter = SnapshotWriter(url: JSONFile.url("trakt-queue.json"))
     /// The profile whose Trakt account this is.
     private var profile = Profile(id: Profile.defaultID, name: "Me", symbol: "person.fill")
@@ -69,6 +75,12 @@ final class TraktStore {
         queueWriter.waitUntilWritten()
         signInTask?.cancel()
         refreshTask = nil
+        sendTask = nil
+        flushTask?.cancel()
+        // A sync still running for the previous profile finds the generation moved and stops;
+        // this profile's own sync must not wait for it.
+        generation += 1
+        isSyncing = false
         self.profile = profile
         queueWriter = SnapshotWriter(url: profile.file("trakt-queue"))
         pending = JSONFile.read([Lossy<TraktChange>].self, from: profile.file("trakt-queue"))?.compactMap(\.value) ?? []
@@ -159,10 +171,14 @@ final class TraktStore {
     /// Sends what is waiting, then pulls the watchlist, resume points and watched history,
     /// skipping the parts Trakt says haven't changed since the last sync.
     func sync(force: Bool = false) async {
-        guard !isSyncing, let library, let credentials, let token = await validToken() else { return }
+        guard !isSyncing, let library, let credentials else { return }
+        let generation = self.generation
+        let keys = self.keys
         isSyncing = true
-        defer { isSyncing = false }
+        defer { if generation == self.generation { isSyncing = false } }
+        guard let token = await validToken(), generation == self.generation else { return }
         await flush()
+        guard generation == self.generation else { return }
         do {
             let activities = try await Trakt.lastActivities(credentials: credentials, token: token)
             let previous = force ? [:] : (defaults.dictionary(forKey: keys.activities) as? [String: String] ?? [:])
@@ -172,6 +188,8 @@ final class TraktStore {
             async let resumes = Self.fetch(if: changed("playback")) { try await Trakt.playback(credentials: credentials, token: token) }
             async let watched = Self.fetch(if: changed("watched")) { try await Trakt.watched(credentials: credentials, token: token) }
             let (list, resume, history) = try await (watchlist, resumes, watched)
+            // Another profile was chosen meanwhile: this account's lists aren't its business.
+            guard generation == self.generation else { return }
 
             if let list {
                 library.applyTraktWatchlist(list, pendingAdds: pendingWatchlist(added: true), pendingRemovals: pendingWatchlist(added: false))
@@ -184,6 +202,7 @@ final class TraktStore {
             lastSync = Date()
             syncError = nil
         } catch {
+            guard generation == self.generation else { return }
             syncError = Self.describe(error)
             AppLog.record("Trakt sync", error)
         }
@@ -226,8 +245,22 @@ final class TraktStore {
     /// Sends waiting changes in order. A change Trakt refuses outright is dropped; a network
     /// failure stops the run, to be tried again at the next sync.
     func flush() async {
-        guard let credentials, !pending.isEmpty, let token = await validToken() else { return }
-        sending: while let change = pending.first {
+        // One run at a time; a second caller waits for it. The run reads the queue live, so
+        // changes added while it is under way go out in the same run.
+        if let sendTask {
+            await sendTask.value
+            return
+        }
+        let task = Task { await self.send() }
+        sendTask = task
+        await task.value
+        if sendTask == task { sendTask = nil }
+    }
+
+    private func send() async {
+        let generation = self.generation
+        guard let credentials, !pending.isEmpty, let token = await validToken(), generation == self.generation else { return }
+        sending: while generation == self.generation, let change = pending.first {
             do {
                 switch change {
                 case let .watchlist(item, added):
@@ -237,14 +270,21 @@ final class TraktStore {
                 case let .rating(item, rating):
                     try await Trakt.rate(item, rating: rating, credentials: credentials, token: token)
                 }
-                pending.removeFirst()
+                settle(change, generation: generation)
             } catch let Trakt.TraktError.status(code) where (400..<500).contains(code) && code != 401 && code != 429 {
-                pending.removeFirst()  // Trakt won't ever take it
+                settle(change, generation: generation)  // Trakt won't ever take it
             } catch {
                 break sending
             }
         }
-        saveQueue()
+        if generation == self.generation { saveQueue() }
+    }
+
+    /// Takes a change Trakt has dealt with off the queue. Found by value, not position: while it
+    /// was being sent, a newer change to the same watchlist entry may have replaced it.
+    private func settle(_ change: TraktChange, generation: Int) {
+        guard generation == self.generation, let index = pending.firstIndex(of: change) else { return }
+        pending.remove(at: index)
     }
 
     /// Rates a title on Trakt, from 1 to 10.
@@ -261,6 +301,8 @@ final class TraktStore {
             guard let token = await validToken() else { return }
             do {
                 try await Trakt.scrobble(action, target: target, progress: progress, credentials: credentials, token: token)
+            } catch Trakt.TraktError.status(409) {
+                // Trakt already recorded this play a moment ago; marking it again would count twice.
             } catch {
                 if action == .stop, progress >= 80 { enqueue(.history([target], watched: true, at: Date())) }
             }
@@ -298,10 +340,14 @@ final class TraktStore {
         guard let token, let credentials else { return nil }
         guard token.isExpiring else { return token }
         if let refreshTask { return await refreshTask.value }
+        let generation = self.generation
+        let tokenKey = keys.token
         let task = Task<Trakt.Token?, Never> { [weak self] in
             do {
                 let fresh = try await Trakt.refresh(token, credentials: credentials)
-                self?.store(fresh)
+                // Saved under the account it belongs to, even if another profile is in use now.
+                self?.save(fresh, key: tokenKey)
+                if let self, generation == self.generation { self.token = fresh; self.isConnected = true }
                 return fresh
             } catch let Trakt.TraktError.status(code) where code == 400 || code == 401 {
                 self?.syncError = "Trakt sign-in expired. Connect again in Settings."
@@ -315,7 +361,7 @@ final class TraktStore {
         }
         refreshTask = task
         let result = await task.value
-        refreshTask = nil
+        if generation == self.generation { refreshTask = nil }
         return result
     }
 

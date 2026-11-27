@@ -125,9 +125,10 @@ jobs:
           path: app/Reel-unsigned.ipa
           retention-days: 30
 
-  # Builds from main are also published to a rolling "latest" release, which gives the .ipa a
+  # Builds from main are also published as GitHub's latest release, which gives the .ipa a
   # permanent direct link that needs no GitHub sign-in and opens straight in AltStore/Sideloadly:
-  #   https://github.com/<owner>/Reel-Media-Center/releases/download/latest/Reel.ipa
+  #   https://github.com/<owner>/Reel-Media-Center/releases/latest/download/Reel.ipa
+  # (The release tagged "latest" holds only source.json.)
   release:
     name: Publish the release and the SideStore source
     needs: build

@@ -28,6 +28,9 @@ struct PlayerView: View {
     /// The intro skip learned in an earlier episode, read once when the player opens.
     @State private var learnedIntro: ViewingChoice?
     @State private var preparedNext = false
+    /// Trakt has been told this play stopped: Up Next tells it before the player closes, and a
+    /// second stop would be refused (409) and then recorded as an extra watch.
+    @State private var sentStop = false
 
     struct SkipFlash: Equatable { let forward: Bool; let id = UUID() }
     /// The fold, when an iPhone Duo stands half-open like a laptop: the picture goes above it and
@@ -456,7 +459,8 @@ struct PlayerView: View {
     }
 
     private func scrobble(_ action: Trakt.ScrobbleAction) {
-        guard !session.isCloud else { return }
+        guard !session.isCloud, !sentStop else { return }
+        if action == .stop { sentStop = true }
         trakt.scrobble(action, target: session.target, position: model.currentTime, duration: model.duration)
     }
 

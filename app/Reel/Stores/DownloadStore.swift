@@ -24,6 +24,9 @@ struct DownloadItem: Codable, Identifiable, Hashable {
     var allowsCellular: Bool?
     /// The last HTTP status the server answered, when it refused the transfer.
     var refusedStatus: Int?
+    /// Languages whose subtitles are saved beside the file once it is down. Kept with the item,
+    /// because a long download often finishes after the app was closed and relaunched.
+    var subtitleLanguages: [String]?
 
     var fraction: Double { expected > 0 ? min(1, Double(written) / Double(expected)) : 0 }
     var isFinished: Bool { state == .finished }
@@ -89,7 +92,6 @@ final class DownloadStore {
     private let relay: DownloadRelay
     private let session: URLSession
     private var lastPublished: [String: Date] = [:]
-    private var subtitleLanguages: [String: [String]] = [:]
 
     init() {
         var folder = JSONFile.folder.appendingPathComponent("Downloads", isDirectory: true)
@@ -145,15 +147,15 @@ final class DownloadStore {
     }
 
     func start(_ target: PlaybackTarget, source: StreamSource, url: URL, options: Options = Options()) throws {
-        if let existing = items[target.videoID] {
-            if existing.state == .downloading { return }
-            removeFiles(of: existing)
-        }
+        let existing = items[target.videoID]
+        if existing?.state == .downloading { return }
+        // Checked before anything is deleted: a copy already here stays if the new one won't fit.
         try checkSpace(for: source)
+        if let existing { removeFiles(of: existing) }
         var item = DownloadItem(target: target, source: source, remoteURL: url, state: .downloading)
         item.allowsCellular = options.allowsCellular
+        item.subtitleLanguages = options.subtitleLanguages
         items[target.videoID] = item
-        subtitleLanguages[target.videoID] = options.subtitleLanguages
         begin(session.downloadTask(with: request(url, cellular: options.allowsCellular)), id: target.videoID)
         save()
     }
@@ -301,7 +303,7 @@ final class DownloadStore {
 
     /// Saves subtitles in the preferred language beside the video, so they work offline too.
     private func fetchSubtitles(for item: DownloadItem) {
-        let languages = subtitleLanguages[item.id] ?? []
+        let languages = item.subtitleLanguages ?? []
         guard !languages.isEmpty else { return }
         let folder = folder
         let id = item.id

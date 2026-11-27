@@ -82,7 +82,8 @@ extension KeyedDecodingContainer {
     func flexInt(_ key: Key) -> Int? {
         if let value = try? decodeIfPresent(Int.self, forKey: key) { return value }
         if let value = try? decodeIfPresent(String.self, forKey: key) { return Int(value) }
-        if let value = try? decodeIfPresent(Double.self, forKey: key) { return Int(value) }
+        // Int(_:) traps on a value no Int can hold; an addon's bad number must not stop the app.
+        if let value = try? decodeIfPresent(Double.self, forKey: key) { return Int(exactly: value.rounded(.towardZero)) }
         return nil
     }
 
