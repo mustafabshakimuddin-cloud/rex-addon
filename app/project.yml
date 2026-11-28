@@ -143,6 +143,8 @@ targets:
           # tvOS needs a layered icon and Top Shelf images; ReelTV has its own catalogue.
           - "Assets.xcassets"
           - "Reel.entitlements"
+          # The iPhone app's own plist; ReelTV has its own.
+          - "Info.plist"
       - path: Shared
       - path: ReelTV
     dependencies:
