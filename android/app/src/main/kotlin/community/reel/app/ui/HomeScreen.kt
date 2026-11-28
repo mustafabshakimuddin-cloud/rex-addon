@@ -61,7 +61,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -136,7 +139,7 @@ class HomeModel {
     companion object { val shared = HomeModel() }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen() {
     val stores = Env.stores
@@ -174,30 +177,28 @@ fun HomeScreen() {
                 refreshing = false
             }
         }) {
-            LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp),
-                verticalArrangement = Arrangement.spacedBy(30.dp)) {
-                if (!heroFirst) item {
-                    Text("Home".tr(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold,
-                        modifier = Modifier.statusBarsPadding().padding(start = 20.dp, top = 8.dp))
-                }
-                for ((index, section) in sections.withIndex()) item(key = section.raw) {
-                    // On a TV, focus landing on the featured row's buttons scrolled the list so the
-                    // picture was cut off; the whole row is brought into view instead.
-                    val keepWhole = if (section == HomeSection.HERO) Modifier.onFocusChanged { state ->
-                        if (state.hasFocus) scope.launch { list.animateScrollToItem(if (heroFirst) index else index + 1) }
-                    } else Modifier
-                    Box(keepWhole) { SectionView(section, model, metrics, attention, width, height) }
-                }
-                model.error?.let { error ->
-                    item {
-                        StateMessage("Offline", error, icon = Icons.Rounded.WifiOff, actionTitle = "Retry") {
-                            scope.launch { model.reload(sections, trakt) }
+            // Compose on a TV keeps the focused item near the top of a list, which pushed most of the
+            // featured picture off screen when its Play button took focus. Home scrolls only as far as
+            // the focused item needs.
+            CompositionLocalProvider(LocalBringIntoViewSpec provides MinimalBringIntoView) {
+                LazyColumn(state = list, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 40.dp),
+                    verticalArrangement = Arrangement.spacedBy(30.dp)) {
+                    if (!heroFirst) item {
+                        Text("Home".tr(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.statusBarsPadding().padding(start = 20.dp, top = 8.dp))
+                    }
+                    for (section in sections) item(key = section.raw) { SectionView(section, model, metrics, attention, width, height) }
+                    model.error?.let { error ->
+                        item {
+                            StateMessage("Offline", error, icon = Icons.Rounded.WifiOff, actionTitle = "Retry") {
+                                scope.launch { model.reload(sections, trakt) }
+                            }
                         }
                     }
-                }
-                if (sections.isEmpty()) item {
-                    StateMessage("Home is empty", "Every section is hidden. Choose what Home shows in Settings.", icon = Icons.Rounded.CropFree,
-                        actionTitle = "Home Screen Settings") { router.openSettings(SettingsPage.HOME_SCREEN) }
+                    if (sections.isEmpty()) item {
+                        StateMessage("Home is empty", "Every section is hidden. Choose what Home shows in Settings.", icon = Icons.Rounded.CropFree,
+                            actionTitle = "Home Screen Settings") { router.openSettings(SettingsPage.HOME_SCREEN) }
+                    }
                 }
             }
         }
@@ -409,5 +410,18 @@ fun ScrollToTop(tab: AppTab, state: androidx.compose.foundation.lazy.LazyListSta
     val router = Env.router
     LaunchedEffect(router.scrollToTop) {
         if (router.scrollToTop == tab) { state.animateScrollToItem(0); router.scrollToTop = null }
+    }
+}
+
+/** Scrolls just enough to show the focused item, as touch lists do, instead of TV's pinned focus. */
+@OptIn(ExperimentalFoundationApi::class)
+private val MinimalBringIntoView = object : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val end = offset + size
+        return when {
+            offset >= 0f && end <= containerSize -> 0f
+            offset < 0f || size > containerSize -> offset
+            else -> end - containerSize
+        }
     }
 }
