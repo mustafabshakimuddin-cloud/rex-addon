@@ -4,6 +4,9 @@
   series and streaming them through Torrentio, Stremio addons and your debrid service. Install it from the
   SideStore / AltStore source:
   `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/latest/source.json`
+- **[Reel for Apple TV](app/README.md#apple-tv)**, the same Swift code built for tvOS, with a Siri
+  Remote player and a Top Shelf. Each release has `ReelTV.ipa`; install it with Sideloadly:
+  `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/ReelTV.ipa`
 - **[`android/`](android/README.md): Reel for Android and Android TV**, the same app in Kotlin, one
   APK for phones, tablets and TVs:
   `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/android-latest/Reel.apk`

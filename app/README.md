@@ -107,15 +107,40 @@ message instead of playing that clip.
 - The player letterboxes 16:9 on the near-square inner display by default; double-tap or the fill
   button crops to fill.
 
+## Apple TV
+
+`ReelTV` is the same app for tvOS 26: the stores, services and screens in `Reel/` are shared, with
+tvOS branches where the platform differs (`Views/PlatformSupport.swift`), and `ReelTV/` holds what
+only Apple TV has. Every release carries `ReelTV.ipa`
+(<https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/ReelTV.ipa>);
+install it with Sideloadly, which signs it with your Apple ID (a free one lasts 7 days).
+
+- **Remote**: in the player, Select shows the controls, and held it plays at double speed. With
+  Skip Intro or Up Next on screen, Select takes it. Left and right skip 10 seconds; on the timeline
+  they scrub with a preview (steps grow while you keep going), Select jumps and Back cancels. Swipe
+  down for audio, subtitles, speed and playback info. Play/Pause plays and pauses; Back closes what
+  is open, then the player.
+- **Everywhere else**: hold Select on a poster, episode or source for its menu (the iPhone's
+  long-press and swipe actions). Buttons that sit in the iPhone's navigation bar are a row at the
+  top of the screen. Sliders are − and + buttons.
+- **Nearest equivalents**: the widgets become a **Top Shelf** (Continue Watching and Next
+  Episodes) and new episodes a **badge** on the icon, since tvOS shows no notification banners.
+  Links, Share and Open in IMDb show a **QR code** for your phone; Trakt's sign-in code comes with
+  one too. **Back Up and Restore** serves a small page on your home network: scan the code and
+  your phone saves the backup or sends one back.
+- **Not on Apple TV**: Live Activities, Spotlight, Shortcuts, Handoff search, Add to Calendar and
+  AirPlay (Apple TV is the receiver). Apple TV keeps app data only in a cache it may clear when
+  storage runs short, so keep a backup, or connect Trakt.
+
 ## Building
 
 ```sh
 cd app
 xcodegen generate
-open Reel.xcodeproj
+open Reel.xcodeproj      # schemes: Reel (iPhone and iPad), ReelTV (Apple TV)
 ```
 
-The icon is drawn by `tools/make_icon.py`.
+The icon is drawn by `tools/make_icon.py`, and the layered Apple TV icon and Top Shelf images by `tools/make_tv_icon.py`.
 
 ## Licences
 

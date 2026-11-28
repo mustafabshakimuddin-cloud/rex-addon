@@ -371,8 +371,7 @@ struct PlayerView: View {
     // MARK: Remote
 
     private func select() {
-        if let nextEpisode = nextEpisode, upNextShowing, !upNextDismissed {
-            _ = nextEpisode
+        if nextEpisode != nil, upNextShowing, !upNextDismissed {
             playNext()
         } else if let offer = skipOffer {
             model.seek(to: offer.to)
