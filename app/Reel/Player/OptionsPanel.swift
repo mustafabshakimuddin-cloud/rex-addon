@@ -47,7 +47,7 @@ struct OptionsPanel: View {
             footer
         }
         .padding(18)
-        .frame(maxWidth: wide ? 400 : .infinity, maxHeight: wide ? .infinity : 460)
+        .frame(maxWidth: wide ? (DeviceStyle.isTV ? 700 : 400) : .infinity, maxHeight: wide ? .infinity : 460)
         .glassEffect(.regular, in: .rect(cornerRadius: 30))
         .padding(wide ? 16 : 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: wide ? .trailing : .bottom)
@@ -136,7 +136,12 @@ struct OptionsPanel: View {
                     .contentTransition(.numericText())
             }
             .frame(maxWidth: .infinity)
+            #if os(tvOS)
+            .focusable()
             .onTapGesture { model.setSubtitleDelay(0) }
+            #else
+            .onTapGesture { model.setSubtitleDelay(0) }
+            #endif
             Button { model.setSubtitleDelay(model.subtitleDelay + 0.25) } label: {
                 Image(systemName: "plus").frame(width: 18, height: 18)
             }
@@ -155,7 +160,7 @@ struct OptionsPanel: View {
             Text("ONLINE").font(.caption2.weight(.bold)).foregroundStyle(.white.opacity(0.5))
             Spacer()
             if model.searchingSubtitles {
-                ProgressView().controlSize(.small)
+                ProgressView().smallControl()
             } else if results.isEmpty {
                 Button("Search OpenSubtitles", systemImage: "magnifyingglass", action: searchOnline)
                     .font(.caption.weight(.semibold))
@@ -244,7 +249,7 @@ struct OptionsPanel: View {
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

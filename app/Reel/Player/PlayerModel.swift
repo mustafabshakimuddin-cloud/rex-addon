@@ -450,7 +450,9 @@ final class PictureInPicture: NSObject, AVPictureInPictureControllerDelegate {
         if controller?.playerLayer === layer { return }
         let pip = AVPictureInPictureController(playerLayer: layer)
         pip?.delegate = self
+        #if os(iOS)
         pip?.canStartPictureInPictureAutomaticallyFromInline = true
+        #endif
         controller = pip
         possibleObservation = pip?.publisher(for: \.isPictureInPicturePossible)
             .removeDuplicates()

@@ -1,12 +1,15 @@
 import Foundation
+#if os(iOS)
 import CoreSpotlight
 import UniformTypeIdentifiers
+#endif
 
 /// Puts My List in Spotlight, so a title can be found from the Home Screen's search.
 enum Spotlight {
     private static let domain = "community.reel.mylist"
 
     static func index(_ items: [MediaItem]) {
+        #if os(iOS)
         let index = CSSearchableIndex.default()
         let entries = items.map { item -> CSSearchableItem in
             let attributes = CSSearchableItemAttributeSet(contentType: .movie)
@@ -21,5 +24,6 @@ enum Spotlight {
             guard !entries.isEmpty else { return }
             index.indexSearchableItems(entries) { _ in }
         }
+        #endif
     }
 }

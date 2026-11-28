@@ -83,7 +83,7 @@ struct LibraryView: View {
                         } label: {
                             ContinueCard(entry: entry, width: metrics.landscape)
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu {
                             NavigationLink(value: entry.item) { Label("Go to Title", systemImage: "info.circle") }
                             Button { library.markWatched(entry.target) } label: { Label("Mark as Watched", systemImage: "checkmark.circle") }
@@ -99,11 +99,9 @@ struct LibraryView: View {
         .background(Theme.Backdrop())
         .scrollsToTopOnRetap(.library)
         .navigationTitle("Library")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { router.openSettings() } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings")
-            }
+        .barActions {
+            Button { router.openSettings() } label: { Image(systemName: "gearshape") }
+                .accessibilityLabel("Settings")
         }
     }
 
@@ -137,7 +135,7 @@ struct LibraryView: View {
                 }
             }
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .padding(.horizontal, 20)
     }
 
@@ -204,7 +202,7 @@ struct LibraryView: View {
                     LazyVGrid(columns: metrics.posterColumns, spacing: 22) {
                         ForEach(shown) { item in
                             NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: posterMark(item)) }
-                                .buttonStyle(.plain)
+                                .cardButton()
                                 .contextMenu { TitleContextMenu(item: item) }
                         }
                     }
@@ -215,7 +213,7 @@ struct LibraryView: View {
                             NavigationLink(value: item) {
                                 MediaRow(item: item) { rowStatus(item) }
                             }
-                            .buttonStyle(.plain)
+                            .cardButton()
                             .contextMenu { TitleContextMenu(item: item) }
                         }
                     }
@@ -227,7 +225,7 @@ struct LibraryView: View {
                                 BannerCard(item: item, width: metrics.landscape * 1.15, eyebrow: bannerEyebrow(item),
                                            subtitle: HeroCarousel.subtitle(for: item), fraction: movieProgress(item))
                             }
-                            .buttonStyle(.plain)
+                            .cardButton()
                             .contextMenu { TitleContextMenu(item: item) }
                         }
                     }

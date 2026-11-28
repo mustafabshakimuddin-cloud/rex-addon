@@ -42,6 +42,14 @@ struct SearchView: View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
+                #if os(tvOS)
+                // Apple TV's search field has no scope bar.
+                Picker("Search in", selection: $scope) {
+                    ForEach(SearchScope.allCases) { Text($0.rawValue.localized).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, DeviceStyle.gutter)
+                #endif
                 if trimmed.isEmpty {
                     suggestions
                 } else if scope == .people {
@@ -55,7 +63,7 @@ struct SearchView: View {
                                 .padding(14)
                                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .padding(.horizontal, 20)
                     }
                     if let searchError, !isSearching {
@@ -77,7 +85,7 @@ struct SearchView: View {
                                 BannerCard(item: top, width: min(metrics.landscape * 1.5, 520),
                                            eyebrow: top.kind.singular, subtitle: HeroCarousel.subtitle(for: top))
                             }
-                            .buttonStyle(.plain)
+                            .cardButton()
                             .simultaneousGesture(TapGesture().onEnded { settings.rememberSearch(query) })
                             .padding(.horizontal, 20)
                         }
@@ -92,9 +100,11 @@ struct SearchView: View {
         .scrollsToTopOnRetap(.search)
         .navigationTitle("Search")
         .searchable(text: $query, prompt: "Titles, cast and directors")
+        #if os(iOS)
         .searchScopes($scope) {
             ForEach(SearchScope.allCases) { Text($0.rawValue.localized).tag($0) }
         }
+        #endif
         .onSubmit(of: .search) { settings.rememberSearch(query) }
         .onChange(of: router.pendingSearch, initial: true) { _, text in
             guard let text else { return }
@@ -141,13 +151,13 @@ struct SearchView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         Button {
                             withAnimation { settings.forgetSearch(recent) }
                         } label: {
                             Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(Theme.secondaryText)
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .accessibilityLabel("Remove \(recent)")
                     }
                     .padding(.vertical, 6)
@@ -166,7 +176,7 @@ struct SearchView: View {
             LazyVGrid(columns: metrics.posterColumns, spacing: 22) {
                 ForEach(items) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: item) }
                         .simultaneousGesture(TapGesture().onEnded { settings.rememberSearch(query) })
                 }

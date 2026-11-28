@@ -160,39 +160,19 @@ struct SourcesSheet: View {
             }
             .background(Theme.Backdrop())
             .navigationTitle(target.displayTitle)
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
+            #if os(tvOS)
+            .searchable(text: $text, prompt: "Release, group, language")
+            .barActions { sortMenu }
+            #else
             .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Release, group, language")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Picker("Sort", selection: $order) {
-                            ForEach(Order.allCases) { Text($0.rawValue).tag($0) }
-                        }
-                        if qualities.count > 2 {
-                            Picker("Quality", selection: $quality) {
-                                ForEach(qualities, id: \.self) { Text($0).tag($0) }
-                            }
-                        }
-                        if addons.count > 1 {
-                            Picker("Addon", selection: $addon) {
-                                Text("All addons").tag(String?.none)
-                                ForEach(addons, id: \.self) { Text($0).tag(String?.some($0)) }
-                            }
-                        }
-                        if settings.isDebridConfigured {
-                            Button("Check Top 5 Formats", systemImage: "checkmark.seal") { checkTop() }
-                        }
-                        Button("Refresh", systemImage: "arrow.clockwise") {
-                            Task { await model.load(target, playback: playback, query: settings.sourceQuery, refresh: true) }
-                        }
-                    } label: {
-                        Label("Sort and filter", systemImage: "line.3.horizontal.decrease")
-                    }
-                }
+                ToolbarItem(placement: .primaryAction) { sortMenu }
             }
+            #endif
         }
         .task { await model.load(target, playback: playback, query: settings.sourceQuery) }
         // Rules changed from the sheet's own Pick Rules page: search again with them.
@@ -261,6 +241,34 @@ struct SourcesSheet: View {
         }
     }
 
+    /// Sort, filters, format checks and refresh.
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort", selection: $order) {
+                ForEach(Order.allCases) { Text($0.rawValue).tag($0) }
+            }
+            if qualities.count > 2 {
+                Picker("Quality", selection: $quality) {
+                    ForEach(qualities, id: \.self) { Text($0).tag($0) }
+                }
+            }
+            if addons.count > 1 {
+                Picker("Addon", selection: $addon) {
+                    Text("All addons").tag(String?.none)
+                    ForEach(addons, id: \.self) { Text($0).tag(String?.some($0)) }
+                }
+            }
+            if settings.isDebridConfigured {
+                Button("Check Top 5 Formats", systemImage: "checkmark.seal") { checkTop() }
+            }
+            Button("Refresh", systemImage: "arrow.clockwise") {
+                Task { await model.load(target, playback: playback, query: settings.sourceQuery, refresh: true) }
+            }
+        } label: {
+            Label("Sort and filter", systemImage: "line.3.horizontal.decrease")
+        }
+    }
+
     private var list: some View {
         List {
             if !settings.isDebridConfigured {
@@ -298,8 +306,8 @@ struct SourcesSheet: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .groupedList()
+        .clearListBackground()
         .refreshable { await model.load(target, playback: playback, query: settings.sourceQuery, refresh: true) }
     }
 
@@ -316,14 +324,16 @@ struct SourcesSheet: View {
                 verifyError: model.verifyErrors[source.fileKey]
             )
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .disabled(!source.isPlayable)
+        #if os(iOS)
         .swipeActions(edge: .trailing) {
             if source.isCached {
                 Button { model.verify(source, playback: playback, settings: settings) } label: { Label("Check", systemImage: "checkmark.seal") }
                     .tint(.indigo)
             }
         }
+        #endif
         .contextMenu {
             Button { playback.play(target, settings: settings, library: library, source: source, fromStart: playback.chooseFromStart); dismiss() } label: {
                 Label("Play", systemImage: "play.fill")
@@ -411,7 +421,7 @@ struct SourceRow: View {
     @ViewBuilder private var verificationLine: some View {
         if verifying {
             HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
+                ProgressView().smallControl(.mini)
                 Text("Checking the file…").font(.caption)
             }
             .foregroundStyle(Theme.secondaryText)

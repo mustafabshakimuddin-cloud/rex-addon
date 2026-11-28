@@ -79,7 +79,7 @@ struct HomeView: View {
         let metrics = CardMetrics(sizeClass, scale: cardScale)
         let attention = Attention(settings: settings, library: library, trakt: trakt, upcoming: upcoming)
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 30) {
+            LazyVStack(alignment: .leading, spacing: DeviceStyle.isTV ? 56 : 30) {
                 if !heroFirst {
                     Text("Home").font(.largeTitle.weight(.bold))
                         .padding(.horizontal, 20)
@@ -107,7 +107,9 @@ struct HomeView: View {
         .ignoresSafeArea(edges: heroFirst ? .top : [])
         .background(Theme.Backdrop())
         .scrollsToTopOnRetap(.home)
+        #if os(iOS)
         .toolbar(.hidden, for: .navigationBar)
+        #endif
         .overlay(alignment: .topTrailing) {
             HStack(spacing: 10) {
             ProfileSwitcher()
@@ -130,10 +132,12 @@ struct HomeView: View {
             await model.loadTrakt(sections, trakt: trakt)
         }
         .task(id: trakt.isConnected) { await model.loadTrakt(sections, trakt: trakt) }
+        #if os(iOS)
         .refreshable {
             await model.reload(sections, trakt: trakt)
             await upcoming.refresh(library, force: true)
         }
+        #endif
     }
 
     private var heroHeight: CGFloat { min(HeroCarousel.height(for: width), height * 0.66) }
@@ -157,7 +161,7 @@ struct HomeView: View {
                     } label: {
                         ContinueCard(entry: entry, width: metrics.landscape)
                     }
-                    .buttonStyle(.plain)
+                    .cardButton()
                     .contextMenu {
                         NavigationLink(value: entry.item) { Label("Go to Title", systemImage: "info.circle") }
                         Button { library.markWatched(entry.target) } label: { Label("Mark as Watched", systemImage: "checkmark.circle") }
@@ -178,7 +182,7 @@ struct HomeView: View {
                                    eyebrow: "New · \(entry.episode.code)" + (more > 0 ? " · +\(more) more" : ""), title: entry.item.name,
                                    subtitle: "\(entry.episode.title) · \(entry.date.formatted(.relative(presentation: .named)))")
                     }
-                    .buttonStyle(.plain)
+                    .cardButton()
                     .contextMenu {
                         NavigationLink(value: entry.item) { Label("Go to Series", systemImage: "info.circle") }
                         Button { playback.chooseSource(for: entry.target) } label: { Label("Choose Source", systemImage: "list.bullet.rectangle") }
@@ -190,14 +194,14 @@ struct HomeView: View {
             if !library.watchlist.isEmpty {
                 ShelfRow(title: "My List", items: library.watchlist) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                 }
             }
         default:
             if section.traktList != nil, let items = model.rows[section].map({ library.shown($0, hidingWatched: settings.hideWatched) }), !items.isEmpty {
                 ShelfRow(title: section.title, subtitle: "From Trakt", items: items) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: item) }
                 }
             } else if let items = model.rows[section].map({ library.shown($0, hidingWatched: settings.hideWatched) }), !items.isEmpty, let source = section.catalogue {
@@ -205,7 +209,7 @@ struct HomeView: View {
                     CatalogGridView(title: section.title, kind: source.0, catalog: source.1, genre: source.2)
                 }) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: item) }
                 }
                 .prefetchPosters(items, width: metrics.poster)
@@ -253,6 +257,8 @@ struct HeroCarousel: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var selection: String?
+    /// The slide whose buttons have focus (Apple TV): the row stays put while someone is on it.
+    @FocusState private var focusedSlide: String?
 
     /// Auto-advance only while someone can see it: not in the background, not behind the player.
     private struct AdvanceKey: Equatable { let ids: [String]; let running: Bool }
@@ -281,9 +287,14 @@ struct HeroCarousel: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $selection)
         .frame(height: height)
+        #if os(iOS)
         // The pages are as wide as the safe area; on iPhone Duo's outer display (and beside the
         // side rail) that stops short of the screen edge. Continue the picture underneath.
         .backgroundExtensionEffect()
+        #else
+        .focusSection()
+        .onChange(of: focusedSlide) { _, slide in if let slide { withAnimation(.easeInOut(duration: 0.4)) { selection = slide } } }
+        #endif
         .overlay(alignment: .bottom) {
             HStack(spacing: 6) {
                 ForEach(items) { item in
@@ -306,7 +317,9 @@ struct HeroCarousel: View {
         }
     }
 
-    private var autoAdvance: Bool { settings.heroAutoAdvance && !reduceMotion && scenePhase == .active && playback.session == nil }
+    private var autoAdvance: Bool {
+        settings.heroAutoAdvance && !reduceMotion && scenePhase == .active && playback.session == nil && focusedSlide == nil
+    }
 
     static func subtitle(for item: MediaItem) -> String {
         var parts = [item.kind.singular]
@@ -342,17 +355,20 @@ struct HeroCarousel: View {
                             Label("Play", systemImage: "play.fill").font(.headline).padding(.horizontal, 10)
                         }
                         .buttonStyle(.glassProminent)
+                        .focused($focusedSlide, equals: item.id)
                     }
                     NavigationLink(value: item) {
                         Label(item.kind == .movie ? "Details" : "Episodes", systemImage: "info.circle").font(.headline)
                     }
                     .buttonStyle(.glass)
+                    .focused($focusedSlide, equals: item.id)
                     Button {
                         library.toggleWatchlist(item)
                     } label: {
                         Image(systemName: library.isInWatchlist(item) ? "checkmark" : "plus").font(.headline)
                     }
                     .buttonStyle(.glass)
+                    .focused($focusedSlide, equals: item.id)
                     .accessibilityLabel(library.isInWatchlist(item) ? "Remove from My List" : "Add to My List")
                 }
             }

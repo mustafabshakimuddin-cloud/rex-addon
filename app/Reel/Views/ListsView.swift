@@ -59,13 +59,13 @@ struct ListsSection: View {
                         NavigationLink(value: ListRoute.custom(list.id)) {
                             tile(list.name, count: list.items.count, poster: list.items.first?.poster, systemImage: "list.bullet")
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                     }
                     ForEach(traktLists) { list in
                         NavigationLink(value: ListRoute.trakt(list)) {
                             tile(list.name, count: list.itemCount, poster: nil, systemImage: "arrow.triangle.2.circlepath")
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                     }
                 }
                 .padding(.horizontal, 20)
@@ -154,7 +154,7 @@ struct ListDetailView: View {
                     NavigationLink(value: item) {
                         PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads))
                     }
-                    .buttonStyle(.plain)
+                    .cardButton()
                     .contextMenu {
                         if case let .custom(id) = route {
                             Button(role: .destructive) { lists.toggle(item, in: id) } label: { Label("Remove from List", systemImage: "minus.circle") }
@@ -167,23 +167,21 @@ struct ListDetailView: View {
         }
         .background(Theme.Backdrop())
         .navigationTitle(title)
-        .toolbar {
+        .barActions {
             if case let .custom(id) = route {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button { newName = title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
-                        Button(role: .destructive) { confirmDelete = true } label: { Label("Delete List", systemImage: "trash") }
-                    } label: { Image(systemName: "ellipsis") }
-                    .alert("Rename List", isPresented: $renaming) {
-                        TextField("Name", text: $newName)
-                        Button("Rename") { lists.rename(id, to: newName) }
-                        Button("Cancel", role: .cancel) {}
-                    }
-                    .confirmationDialog("Delete “\(title)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                        Button("Delete", role: .destructive) {
-                            lists.delete(id)
-                            dismiss()
-                        }
+                Menu {
+                    Button { newName = title; renaming = true } label: { Label("Rename", systemImage: "pencil") }
+                    Button(role: .destructive) { confirmDelete = true } label: { Label("Delete List", systemImage: "trash") }
+                } label: { Image(systemName: "ellipsis") }
+                .alert("Rename List", isPresented: $renaming) {
+                    TextField("Name", text: $newName)
+                    Button("Rename") { lists.rename(id, to: newName) }
+                    Button("Cancel", role: .cancel) {}
+                }
+                .confirmationDialog("Delete “\(title)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                    Button("Delete", role: .destructive) {
+                        lists.delete(id)
+                        dismiss()
                     }
                 }
             }

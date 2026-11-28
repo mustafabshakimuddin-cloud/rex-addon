@@ -60,16 +60,19 @@ struct StatusView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .groupedList()
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Status")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                ShareLink(item: health.report) { Image(systemName: "square.and.arrow.up") }
-                    .disabled(health.checks.isEmpty || health.isRunning)
-                    .accessibilityLabel("Share report")
-            }
+        .barActions {
+            #if os(tvOS)
+            Button { Task { await run() } } label: { Label("Check Again", systemImage: "arrow.clockwise") }
+                .disabled(health.isRunning)
+            #else
+            ShareLink(item: health.report) { Image(systemName: "square.and.arrow.up") }
+                .disabled(health.checks.isEmpty || health.isRunning)
+                .accessibilityLabel("Share report")
+            #endif
         }
         .refreshable { await run() }
         .task { await run() }
@@ -127,7 +130,7 @@ struct StatusView: View {
                 Text(check.title.localized).font(.body.weight(.semibold))
                 Spacer()
                 if pending {
-                    ProgressView().controlSize(.small)
+                    ProgressView().smallControl()
                 } else {
                     Text(check.level.label.localized)
                         .font(.caption2.weight(.heavy))

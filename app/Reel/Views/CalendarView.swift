@@ -100,20 +100,24 @@ struct CalendarView: View {
         .background(Theme.Backdrop())
         .scrollsToTopOnRetap(.calendar)
         .navigationTitle("Calendar")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Picker("Layout", selection: $layout) {
-                    ForEach(CalendarLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
-                }
-                .pickerStyle(.menu)
+        .barActions {
+            Picker("Layout", selection: $layout) {
+                ForEach(CalendarLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
             }
+            .pickerStyle(.menu)
+            #if os(tvOS)
+            // No pull to refresh on Apple TV, and no calendar app to export to.
+            Button { Task { await upcoming.refresh(library, force: true) } } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(upcoming.isLoading)
+            #else
             if !upcoming.upcoming.isEmpty, let file = CalendarExport.write(upcoming.upcoming) {
-                ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: file, preview: SharePreview("Upcoming episodes")) {
-                        Label("Add to Calendar", systemImage: "calendar.badge.plus")
-                    }
+                ShareLink(item: file, preview: SharePreview("Upcoming episodes")) {
+                    Label("Add to Calendar", systemImage: "calendar.badge.plus")
                 }
             }
+            #endif
         }
         .refreshable { await upcoming.refresh(library, force: true) }
     }
@@ -149,7 +153,7 @@ struct CalendarView: View {
                        title: entry.item.name, subtitle: subtitle(entry))
                 .opacity(watched ? 0.6 : 1)
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .contextMenu { menu(entry) }
     }
 
@@ -175,7 +179,7 @@ struct CalendarView: View {
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .contextMenu { menu(entry) }
     }
 

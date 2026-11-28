@@ -81,7 +81,7 @@ struct AttentionStrip: View {
                     LazyHStack(spacing: 12) {
                         ForEach(attention.items) { item in
                             Button { perform(item.action) } label: { card(item) }
-                                .buttonStyle(.plain)
+                                .cardButton()
                         }
                     }
                     .padding(.horizontal, 20)

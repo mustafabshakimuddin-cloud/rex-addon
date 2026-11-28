@@ -190,7 +190,7 @@ struct SettingsView: View {
             Section("Subtitle Appearance") {
                 VStack(alignment: .leading) {
                     LabeledContent("Size", value: "\(Int(settings.subtitleScale * 100))%")
-                    Slider(value: Bindable(settings).subtitleScale, in: 0.7...1.6, step: 0.1)
+                    RangeControl(value: Bindable(settings).subtitleScale, range: 0.7...1.6, step: 0.1)
                 }
                 Picker("Style", selection: Bindable(settings).subtitleStyle) {
                     ForEach(SubtitleStyle.allCases) { Text($0.title.localized).tag($0) }
@@ -201,12 +201,12 @@ struct SettingsView: View {
                 if settings.subtitleStyle == .box {
                     VStack(alignment: .leading) {
                         LabeledContent("Box", value: "\(Int(settings.subtitleBoxOpacity * 100))%")
-                        Slider(value: Bindable(settings).subtitleBoxOpacity, in: 0.3...1, step: 0.05)
+                        RangeControl(value: Bindable(settings).subtitleBoxOpacity, range: 0.3...1, step: 0.05)
                     }
                 }
                 VStack(alignment: .leading) {
                     LabeledContent("Height", value: settings.subtitleLift == 0 ? "Default" : "+\(Int(settings.subtitleLift)) pt")
-                    Slider(value: Bindable(settings).subtitleLift, in: 0...120, step: 10)
+                    RangeControl(value: Bindable(settings).subtitleLift, range: 0...120, step: 10)
                 }
                 Toggle("Follow the system text size", isOn: Bindable(settings).subtitleFollowsTextSize)
                 SubtitlePreview(appearance: settings.subtitleAppearance)
@@ -250,7 +250,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.secondaryText)
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Settings")
         .navigationDestination(for: SettingsPage.self) { page in
@@ -417,7 +417,7 @@ struct PickRulesView: View {
                 Text("A self-hosted Torrentio can stand in for the public one. Languages listed here come first in Torrentio's results.")
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Pick Rules")
     }
@@ -452,7 +452,7 @@ private struct GroupsList: View {
                     .onDelete { settings.preferredGroups.remove(atOffsets: $0) }
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Preferred Groups")
     }
@@ -483,7 +483,7 @@ struct MultiSelectList: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle(title)
         .toolbar {

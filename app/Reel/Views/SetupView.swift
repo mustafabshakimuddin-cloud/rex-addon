@@ -39,6 +39,13 @@ struct SetupView: View {
                     .frame(maxWidth: 560)
             }
             .background(Theme.Backdrop())
+            #if os(tvOS)
+            // The remote's Back button steps back through setup rather than closing it.
+            .onExitCommand { if step > .welcome && step < .done { go(step.previous) } }
+            .barActions {
+                Button("Close Setup", systemImage: "xmark") { finish() }
+            }
+            #else
             .toolbar {
                 if step > .welcome && step < .done {
                     ToolbarItem(placement: .cancellationAction) {
@@ -50,6 +57,7 @@ struct SetupView: View {
                         .accessibilityLabel("Close setup")
                 }
             }
+            #endif
         }
         .onAppear { keyDraft = settings.debridKey }
         .interactiveDismissDisabled()
@@ -122,7 +130,7 @@ struct SetupView: View {
                 .padding(16)
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
             }
-            .buttonStyle(.plain)
+            .cardButton()
             Text("Optional. You can add addons any time under Settings → Stremio addons.")
                 .font(.footnote).foregroundStyle(Theme.secondaryText)
         case .playback:
@@ -163,7 +171,7 @@ struct SetupView: View {
                 .padding(16)
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
             }
-            .buttonStyle(.plain)
+            .cardButton()
             Text("Optional. Trakt needs a free API app of your own; the Trakt page explains how.")
                 .font(.footnote).foregroundStyle(Theme.secondaryText)
         case .done:
@@ -221,7 +229,7 @@ struct SetupView: View {
             .padding(14)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .cardButton()
     }
 
     private var progressDots: some View {

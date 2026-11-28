@@ -51,15 +51,13 @@ struct HistoryView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .groupedList()
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("History")
-        .toolbar {
+        .barActions {
             if !library.history.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Clear", role: .destructive) { confirmClear = true }
-                }
+                Button("Clear", role: .destructive) { confirmClear = true }
             }
         }
         .confirmationDialog("Clear your watch history?", isPresented: $confirmClear, titleVisibility: .visible) {
@@ -108,11 +106,13 @@ struct HistoryView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .listRowBackground(Theme.surface)
+        #if os(iOS)
         .swipeActions {
             Button(role: .destructive) { library.clearProgress(entry) } label: { Label("Remove", systemImage: "trash") }
         }
+        #endif
         .contextMenu {
             NavigationLink(value: entry.item) { Label("Go to Title", systemImage: "info.circle") }
             if entry.isFinished {

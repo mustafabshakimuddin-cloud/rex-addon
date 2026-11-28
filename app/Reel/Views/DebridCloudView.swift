@@ -47,8 +47,8 @@ struct DebridCloudView: View {
                 .disabled(!entry.ready)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .groupedList()
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("\(settings.debridService.name) Files")
         .searchable(text: $query, prompt: "Search your files")
@@ -102,15 +102,15 @@ private struct DebridCloudFilesView: View {
                         if opening == file.id { ProgressView() } else { Image(systemName: "play.fill").foregroundStyle(Theme.accent) }
                     }
                 }
-                .buttonStyle(.plain)
+                .cardButton()
                 .disabled(opening != nil)
             }
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+        .groupedList()
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle(entry.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .task {
             defer { loading = false }
             do {

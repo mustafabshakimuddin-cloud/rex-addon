@@ -16,10 +16,21 @@ struct PlaybackInfoView: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
-            content(headroom: screen?.currentEDRHeadroom ?? 1,
+            content(headroom: Self.headroom(screen, potential: false) ?? 1,
                     display: AetherEngine.displayCapabilities)
         }
         .background(ScreenReader { screen = $0 }.frame(width: 0, height: 0))
+    }
+
+    /// The screen's extended-range headroom. Apple TV doesn't report one; the TV's own HDR mode
+    /// decides, and "Can show HDR" says whether it is on.
+    private static func headroom(_ screen: UIScreen?, potential: Bool) -> CGFloat? {
+        #if os(iOS)
+        guard let screen else { return nil }
+        return potential ? screen.potentialEDRHeadroom : screen.currentEDRHeadroom
+        #else
+        return nil
+        #endif
     }
 
     @ViewBuilder
@@ -29,13 +40,17 @@ struct PlaybackInfoView: View {
             section("Display") {
                 line("Can show HDR", yesNo(display.supportsHDR))
                 line("Dolby Vision", yesNo(display.supportsDolbyVision))
+                #if os(iOS)
                 line("Highlight boost now", Self.headroomText(headroom))
-                if let potential = screen?.potentialEDRHeadroom, potential > 1 {
+                #endif
+                if let potential = Self.headroom(screen, potential: true), potential > 1 {
                     line("Highlight boost max", Self.headroomText(potential))
                 }
+                #if os(iOS)
                 if ProcessInfo.processInfo.isLowPowerModeEnabled {
                     line("Low Power Mode", "On")
                 }
+                #endif
             }
 
             section("Video") {
@@ -122,6 +137,10 @@ struct PlaybackInfoView: View {
             return (.off, "HDR source, shown as SDR",
                     "This screen or the current route (AirPlay, an external display) can't show HDR, so the picture is mapped to SDR.")
         }
+        #if os(tvOS)
+        // The TV does the tone mapping; Apple TV's part ends once it sends the signal.
+        return (.on, "\(Self.formatName(presented)) is on", "Apple TV is sending \(Self.formatName(presented)) to the TV.")
+        #endif
         if boosting {
             return (.on, "\(Self.formatName(presented)) is on",
                     "The screen is driving highlights \(Self.headroomText(headroom)) brighter than SDR white.")

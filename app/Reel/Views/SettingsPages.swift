@@ -51,15 +51,32 @@ struct AddonsView: View {
                             }
                         }
                     }
+                    #if os(tvOS)
+                    // No drag or swipe on Apple TV: hold the select button for these.
+                    .contextMenu {
+                        let index = settings.addons.firstIndex { $0.id == addon.id } ?? 0
+                        if index > 0 {
+                            Button { settings.addons.move(fromOffsets: [index], toOffset: index - 1) } label: { Label("Move Up", systemImage: "arrow.up") }
+                        }
+                        if index < settings.addons.count - 1 {
+                            Button { settings.addons.move(fromOffsets: [index], toOffset: index + 2) } label: { Label("Move Down", systemImage: "arrow.down") }
+                        }
+                        Button(role: .destructive) { settings.addons.removeAll { $0.id == addon.id } } label: { Label("Remove", systemImage: "trash") }
+                    }
+                    #endif
                 }
+                #if os(iOS)
                 .onDelete { settings.addons.remove(atOffsets: $0) }
                 .onMove { settings.addons.move(fromOffsets: $0, toOffset: $1) }
+                #endif
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Stremio Addons")
+        #if os(iOS)
         .toolbar { if !settings.addons.isEmpty { EditButton() } }
+        #endif
     }
 
     private func add() {
@@ -122,6 +139,18 @@ struct TraktSettingsView: View {
                         VStack(spacing: 12) {
                             Text("Enter this code at").foregroundStyle(Theme.secondaryText)
                             Text(url.replacingOccurrences(of: "https://", with: "")).font(.headline)
+                            #if os(tvOS)
+                            Text(code)
+                                .font(.system(size: 64, weight: .bold, design: .monospaced))
+                            // On Apple TV the phone does the typing: scan, sign in, enter the code.
+                            if let link = URL(string: url), let image = QRCodeSheet.code(for: link.absoluteString) {
+                                Image(uiImage: image).interpolation(.none).resizable()
+                                    .frame(width: 260, height: 260)
+                                    .padding(16)
+                                    .background(.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                Text("Or scan this with your phone").font(.footnote).foregroundStyle(Theme.secondaryText)
+                            }
+                            #else
                             Text(code)
                                 .font(.system(size: 40, weight: .bold, design: .monospaced))
                                 .textSelection(.enabled)
@@ -133,6 +162,7 @@ struct TraktSettingsView: View {
                                 }
                                 .buttonStyle(.glassProminent)
                             }
+                            #endif
                             HStack(spacing: 8) {
                                 ProgressView()
                                 Text("Waiting for you to approve…").font(.footnote).foregroundStyle(Theme.secondaryText)
@@ -168,7 +198,7 @@ struct TraktSettingsView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Trakt")
         .onAppear {
@@ -208,7 +238,7 @@ struct AppearanceView: View {
                                 Text(choice.title.localized).font(.caption).foregroundStyle(settings.accent == choice ? .white : Theme.secondaryText)
                             }
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .accessibilityLabel(choice.title)
                         .accessibilityAddTraits(settings.accent == choice ? .isSelected : [])
                     }
@@ -246,7 +276,7 @@ struct AppearanceView: View {
                 Text("The featured titles at the top of Home move on every few seconds. Turn this off to move them only by swiping.")
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Appearance")
     }
@@ -264,18 +294,37 @@ struct HomeLayoutView: View {
                     Toggle(isOn: binding(for: section)) {
                         Label(section.title, systemImage: section.systemImage)
                     }
+                    #if os(tvOS)
+                    .contextMenu {
+                        let index = settings.homeOrder.firstIndex(of: section) ?? 0
+                        if index > 0 {
+                            Button { settings.homeOrder.move(fromOffsets: [index], toOffset: index - 1) } label: { Label("Move Up", systemImage: "arrow.up") }
+                        }
+                        if index < settings.homeOrder.count - 1 {
+                            Button { settings.homeOrder.move(fromOffsets: [index], toOffset: index + 2) } label: { Label("Move Down", systemImage: "arrow.down") }
+                        }
+                    }
+                    #endif
                 }
+                #if os(iOS)
                 .onMove { settings.homeOrder.move(fromOffsets: $0, toOffset: $1) }
+                #endif
             } footer: {
+                #if os(tvOS)
+                Text("Hold the select button on a section to move it. Hidden sections aren't loaded. Waiting on You collects anything that needs you: setup, failed downloads, new episodes, a stopped sync.")
+                #else
                 Text("Drag to reorder. Hidden sections aren't loaded. Waiting on You collects anything that needs you: setup, failed downloads, new episodes, a stopped sync.")
+                #endif
             }
             Section {
                 Button("Reset to Default", role: .destructive) { confirmReset = true }
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
+        #if os(iOS)
         .environment(\.editMode, .constant(.active))
+        #endif
         .navigationTitle("Home Screen")
         .confirmationDialog("Show every section in the original order?", isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { settings.resetHomeLayout() }
@@ -321,7 +370,7 @@ struct OfflineSettingsView: View {
                 Button("Open Downloads") { router.openLibrary(.downloads) }
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Offline Copies")
     }
@@ -340,6 +389,9 @@ struct BackupView: View {
 
     var body: some View {
         Form {
+            #if os(tvOS)
+            BackupTransferSection(message: $message)
+            #else
             Section {
                 if let exportURL {
                     ShareLink(item: exportURL) { Label("Save Backup…", systemImage: "square.and.arrow.up") }
@@ -354,6 +406,7 @@ struct BackupView: View {
             } footer: {
                 Text("Replaces My List, history and settings on this device with the backup's.")
             }
+            #endif
             if let message {
                 Section { Text(message).font(.footnote) }
             }
@@ -364,13 +417,15 @@ struct BackupView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Back Up and Restore")
+        #if os(iOS)
         .task { exportURL = Backup.write(library: library, memory: memory, lists: lists) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             if case let .success(url) = result { confirmRestore = url }
         }
+        #endif
         .confirmationDialog("Replace this device's library and settings with the backup?",
                             isPresented: Binding(get: { confirmRestore != nil }, set: { if !$0 { confirmRestore = nil } }),
                             titleVisibility: .visible) {
@@ -423,7 +478,7 @@ struct TMDBSettingsView: View {
                 Text("Optional. With a key, cast and crew get photos and person pages get a biography. Leave it empty to turn this off. The key stays in this device's Keychain.")
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("TMDB")
     }

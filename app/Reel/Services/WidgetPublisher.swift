@@ -1,7 +1,11 @@
 import Foundation
 import UIKit
+#if os(iOS)
 import WidgetKit
 import ActivityKit
+#else
+import TVServices
+#endif
 
 /// Writes what the widgets show into the app group, with small pictures, and asks WidgetKit to
 /// redraw. Does nothing when the app group isn't granted.
@@ -52,7 +56,12 @@ enum WidgetPublisher {
         where file.hasSuffix(".jpg") && !keep.contains(file) {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(file))
         }
+        #if os(iOS)
         WidgetCenter.shared.reloadAllTimelines()
+        #else
+        // The Apple TV Top Shelf reads the same file.
+        TVTopShelfContentProvider.topShelfContentDidChange()
+        #endif
     }
 
     private static func picture(_ url: URL?, name: String, in folder: URL) async -> String? {
@@ -71,6 +80,7 @@ enum WidgetPublisher {
     }
 }
 
+#if os(iOS)
 /// A Live Activity per running download, updated every few seconds.
 @MainActor
 final class DownloadActivities {
@@ -107,3 +117,11 @@ final class DownloadActivities {
         Task { await handle.end(ActivityContent(state: state, staleDate: nil), dismissalPolicy: .after(dismissal)) }
     }
 }
+#else
+/// Apple TV has no Live Activities; a download's progress shows in Library → Downloads.
+@MainActor
+final class DownloadActivities {
+    func progress(_ item: DownloadItem, speed: Double?) {}
+    func end(_ item: DownloadItem, finished: Bool) {}
+}
+#endif

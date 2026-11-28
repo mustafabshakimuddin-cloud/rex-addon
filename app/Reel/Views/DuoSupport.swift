@@ -22,7 +22,7 @@ struct FoldObserver: ViewModifier {
     /// so the picture belongs above it and the controls below. A crease running top to bottom
     /// (held like a book) is left alone; video across it reads like on any foldable.
     static func horizontalCrease(_ proxy: GeometryProxy) -> CGRect? {
-        #if !targetEnvironment(macCatalyst)
+        #if os(iOS) && !targetEnvironment(macCatalyst)
         if #available(iOS 27.1, *) {
             guard let region = proxy.reservedRegions(kind: .division).first(where: \.isActive) else { return nil }
             let frame = region.frame

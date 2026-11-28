@@ -1,3 +1,4 @@
+#if os(iOS)
 import AppIntents
 
 /// "Resume watching in Reel": plays the newest entry of Continue Watching, picking its source
@@ -40,3 +41,4 @@ struct ReelShortcuts: AppShortcutsProvider {
                     shortTitle: "Search", systemImageName: "magnifyingglass")
     }
 }
+#endif

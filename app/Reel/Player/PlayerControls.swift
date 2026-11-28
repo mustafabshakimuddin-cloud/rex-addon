@@ -52,7 +52,7 @@ struct StartupCover: View {
                 .overlay(Color.black.opacity(0.55))
                 .ignoresSafeArea()
             VStack(spacing: 16) {
-                ProgressView().controlSize(.large).tint(.white)
+                ProgressView().largeControl().tint(.white)
                 Text("Opening \(session.target.displayTitle)").font(.headline)
                 Text([session.source.quality, session.source.size].compactMap { $0 }.joined(separator: " · "))
                     .font(.subheadline).foregroundStyle(.white.opacity(0.7))
@@ -124,6 +124,7 @@ struct Scrubber: View {
             .frame(height: dragging ? 8 : 5)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
+            #if os(iOS)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
@@ -135,6 +136,7 @@ struct Scrubber: View {
                         onCommit(Double(min(max(gesture.location.x / width, 0), 1)) * span)
                     }
             )
+            #endif
             .animation(.snappy(duration: 0.2), value: dragging)
         }
         .frame(height: 28)
@@ -149,6 +151,7 @@ struct Scrubber: View {
     }
 }
 
+#if os(iOS)
 struct AirPlayButton: UIViewRepresentable {
     func makeUIView(context: Context) -> AVRoutePickerView {
         let view = AVRoutePickerView()
@@ -159,6 +162,7 @@ struct AirPlayButton: UIViewRepresentable {
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
+#endif
 
 /// Two chevrons on the side a double tap skipped.
 struct SkipFlashView: View {

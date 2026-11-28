@@ -59,22 +59,20 @@ struct DownloadsView: View {
         }
         .background(Theme.Backdrop())
         .navigationTitle("Downloads")
-        .toolbar {
+        .barActions {
             if !downloads.items.isEmpty {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button { downloads.pauseAll() } label: { Label("Pause All", systemImage: "pause.fill") }
-                            .disabled(downloads.active.isEmpty)
-                        Button { (downloads.paused + downloads.problems).forEach { playback.retryDownload($0, settings: settings) } } label: { Label("Resume All", systemImage: "arrow.down") }
-                            .disabled(downloads.paused.isEmpty && downloads.problems.isEmpty)
-                        Divider()
-                        Button(role: .destructive) { confirmCleanup = true } label: {
-                            Label("Delete Watched Downloads", systemImage: "trash")
-                        }
-                        .disabled(watched.isEmpty)
-                    } label: {
-                        Label("Manage", systemImage: "ellipsis.circle")
+                Menu {
+                    Button { downloads.pauseAll() } label: { Label("Pause All", systemImage: "pause.fill") }
+                        .disabled(downloads.active.isEmpty)
+                    Button { (downloads.paused + downloads.problems).forEach { playback.retryDownload($0, settings: settings) } } label: { Label("Resume All", systemImage: "arrow.down") }
+                        .disabled(downloads.paused.isEmpty && downloads.problems.isEmpty)
+                    Divider()
+                    Button(role: .destructive) { confirmCleanup = true } label: {
+                        Label("Delete Watched Downloads", systemImage: "trash")
                     }
+                    .disabled(watched.isEmpty)
+                } label: {
+                    Label("Manage", systemImage: "ellipsis.circle")
                 }
             }
         }

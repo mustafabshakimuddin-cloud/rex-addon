@@ -1,5 +1,5 @@
 import Foundation
-#if canImport(ActivityKit)
+#if os(iOS)
 import ActivityKit
 #endif
 
@@ -43,7 +43,7 @@ struct WidgetData: Codable, Equatable {
     }
 }
 
-#if canImport(ActivityKit)
+#if os(iOS)
 /// A download as a Live Activity: on the Lock Screen and in the Dynamic Island while it runs.
 struct DownloadActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {

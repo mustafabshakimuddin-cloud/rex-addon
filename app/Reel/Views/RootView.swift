@@ -179,7 +179,9 @@ struct RootView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        #if os(iOS)
         .tabBarMinimizeBehavior(.onScrollDown)
+        #endif
         // A new accent colour rebuilds the tabs so every screen picks it up; the sheets and the
         // router's state sit outside and carry on.
         .id(settings.accent)
@@ -206,8 +208,10 @@ struct RootView: View {
         }
         .sheet(item: Bindable(playback).choosingSource) { target in
             SourcesSheet(target: target)
+                #if os(iOS)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+                #endif
         }
         .fullScreenCover(item: Bindable(playback).session, onDismiss: { playback.playerDismissed() }) { session in
             PlayerView(session: session)
@@ -247,6 +251,10 @@ struct RootView: View {
             guard on else { return }
             Task { if !(await Notifier.requestPermission()) { settings.notifyDownloads = false } }
         }
+        #if os(tvOS)
+        // No banners on Apple TV: what needs you is counted on the app's icon instead.
+        .onChange(of: attention.badgeCount, initial: true) { _, count in Notifier.setBadge(count) }
+        #endif
         .onChange(of: trakt.syncError) { _, error in
             if let error { alerts.post("Trakt sync stopped", message: error, level: .warning, action: .openTrakt) }
         }
@@ -325,10 +333,12 @@ struct AlertToast: View {
                 .glassEffect(.regular, in: .rect(cornerRadius: 22))
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
+                #if os(iOS)
                 .onTapGesture { alerts.dismissCurrent() }
                 .gesture(DragGesture(minimumDistance: 12).onEnded { value in
                     if value.translation.height < -10 { alerts.dismissCurrent() }
                 })
+                #endif
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .id(alert.id)
                 .accessibilityElement(children: .combine)
@@ -348,6 +358,7 @@ struct AlertToast: View {
     }
 }
 
+#if os(iOS)
 /// Keyboard shortcuts for iPad and a hardware keyboard; they appear in the shortcut overlay
 /// when ⌘ is held.
 struct AppCommands: Commands {
@@ -369,6 +380,7 @@ struct AppCommands: Commands {
         }
     }
 }
+#endif
 
 /// Opens one screen at launch when CI passes `-ReelShot <screen>`, so the simulator job can
 /// screenshot every screen on every display. Does nothing otherwise.

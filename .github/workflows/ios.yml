@@ -125,13 +125,185 @@ jobs:
           path: app/Reel-unsigned.ipa
           retention-days: 30
 
+  # Apple TV: the same app for tvOS (target ReelTV) with its Top Shelf extension, unsigned like
+  # the iPhone build. Install it with Sideloadly, which signs it with your Apple ID.
+  tvos:
+    name: Unsigned Apple TV .ipa
+    runs-on: xcode-27
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          [ -z "$XCODE" ] && XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i tvos
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-tv-${{ hashFiles('app/project.yml') }}
+          restore-keys: spm-tv-
+
+      - name: Build for Apple TV (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Reel.xcodeproj \
+            -scheme ReelTV \
+            -sdk appletvos \
+            -configuration Release \
+            -derivedDataPath build \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="0.1.${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            | tee build.log | grep -E "error:|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" build.log
+
+      - name: Show errors
+        if: failure()
+        run: grep -E "error:" build.log | sort -u | head -120 || true
+
+      - name: Package .ipa
+        run: |
+          rm -rf Payload ReelTV-unsigned.ipa
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-appletvos/Reel.app Payload/
+          find Payload -name "*.dSYM" -prune -exec rm -rf {} +
+          for FW in Payload/Reel.app/Frameworks/*.framework Payload/Reel.app/Frameworks/*.dylib; do
+            [ -e "$FW" ] && codesign --force --sign - "$FW"
+          done
+          if [ -d Payload/Reel.app/PlugIns/ReelTopShelf.appex ]; then
+            codesign --force --sign - --entitlements ReelTV/ReelTV.entitlements Payload/Reel.app/PlugIns/ReelTopShelf.appex
+          fi
+          codesign --force --sign - --entitlements ReelTV/ReelTV.entitlements Payload/Reel.app
+          du -sh Payload/Reel.app/Frameworks/* 2>/dev/null | sort -h | tail -8
+          zip -qr ReelTV-unsigned.ipa Payload
+          ls -lh ReelTV-unsigned.ipa
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReelTV-unsigned-ipa
+          path: app/ReelTV-unsigned.ipa
+          retention-days: 30
+
+  # Launches the Apple TV build in the Apple TV 4K simulator and screenshots each screen. Shots
+  # are printed into the log as small JPEGs (base64) as well as uploaded.
+  tv-simulator:
+    name: Launch on the Apple TV simulator
+    runs-on: xcode-27
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          [ -z "$XCODE" ] && XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcrun simctl list devices available | grep -i "apple tv" || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-tvsim-${{ hashFiles('app/project.yml') }}
+          restore-keys: spm-tvsim-
+
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          xcodegen generate
+          xcodebuild build -project Reel.xcodeproj -scheme ReelTV -sdk appletvsimulator \
+            -destination 'generic/platform=tvOS Simulator' -configuration Debug -derivedDataPath build \
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee sim.log | grep -E "error:|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
+
+      - name: Show errors
+        if: failure()
+        run: grep -E "error:" sim.log | sort -u | head -120 || true
+
+      - name: Launch and screenshot
+        timeout-minutes: 45
+        run: |
+          APP=build/Build/Products/Debug-appletvsimulator/Reel.app
+          BUNDLE=community.reel.tv
+          mkdir -p shots
+          CRASHES=""
+          limit() { perl -e 'alarm shift; exec @ARGV' "$@"; }
+          CANDIDATES=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys; d=json.load(sys.stdin)['devices']
+          c=[(r,x['udid']) for r,l in d.items() for x in l if x['name'].startswith('Apple TV 4K')]
+          print(' '.join(u for _,u in sorted(c, reverse=True)))")
+          UDID=""
+          for C in $CANDIDATES; do
+            limit 240 xcrun simctl boot "$C" >/dev/null 2>&1 || true
+            if limit 300 xcrun simctl bootstatus "$C" -b >/dev/null 2>&1; then UDID="$C"; break; fi
+          done
+          if [ -z "$UDID" ]; then echo "::error::No bootable Apple TV simulator on this runner"; exit 1; fi
+          xcrun simctl list devices | grep "$UDID" || true
+          limit 600 xcrun simctl install "$UDID" "$APP" || { echo "::error::install failed"; exit 1; }
+          FIRST=1
+          for SCREEN in home setup detail sources player movies calendar library search settings status; do
+            limit 30 xcrun simctl terminate "$UDID" $BUNDLE >/dev/null 2>&1 || true
+            limit 300 xcrun simctl launch "$UDID" $BUNDLE -ReelShot "$SCREEN" -ReelMock || true
+            if [ $FIRST = 1 ]; then sleep 45; FIRST=0; else sleep 14; fi
+            if ! RUNNING=$(limit 60 xcrun simctl spawn "$UDID" launchctl list 2>/dev/null); then
+              echo "::warning::couldn't check whether the app is running on the $SCREEN screen"
+            elif ! printf '%s\n' "$RUNNING" | grep -q "$BUNDLE"; then
+              echo "::error::Apple TV: the app is not running on the $SCREEN screen (crashed?)"
+              CRASHES="$CRASHES $SCREEN"
+              limit 60 xcrun simctl spawn "$UDID" log show --last 2m --predicate 'process == "Reel"' --style compact | tail -40 || true
+              REPORT=$(ls -t ~/Library/Logs/DiagnosticReports/Reel*.ips 2>/dev/null | head -1)
+              if [ -n "$REPORT" ]; then python3 tools/crash_summary.py "$REPORT" || true; rm -f "$REPORT"; fi
+            fi
+            limit 30 xcrun simctl io "$UDID" screenshot "shots/AppleTV-$SCREEN.png" || continue
+            sips -Z 640 -s format jpeg -s formatOptions 55 "shots/AppleTV-$SCREEN.png" --out "shots/AppleTV-$SCREEN-small.jpg" >/dev/null
+            echo "=== SHOT AppleTV-$SCREEN ==="
+            base64 -i "shots/AppleTV-$SCREEN-small.jpg" | tr -d '\n'; echo
+            echo "=== END SHOT ==="
+          done
+          limit 60 xcrun simctl shutdown "$UDID" || true
+          if [ -n "$CRASHES" ]; then echo "::error::The app stopped on:$CRASHES"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tv-simulator-screenshots
+          path: app/shots/
+          retention-days: 14
+
   # Builds from main are also published as GitHub's latest release, which gives the .ipa a
   # permanent direct link that needs no GitHub sign-in and opens straight in AltStore/Sideloadly:
   #   https://github.com/<owner>/Reel-Media-Center/releases/latest/download/Reel.ipa
   # (The release tagged "latest" holds only source.json.)
   release:
     name: Publish the release and the SideStore source
-    needs: build
+    needs: [ build, tvos ]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -141,6 +313,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: Reel-unsigned-ipa
+      - uses: actions/download-artifact@v4
+        with:
+          name: ReelTV-unsigned-ipa
       # Each build gets its own release (v0.1.N), which replaces the previous one, plus the rolling
       # "latest" release that holds only source.json.
       # SideStore / AltStore / Feather add the source by:
@@ -155,6 +330,7 @@ jobs:
           VERSION="0.1.$BUILD"
           TAG="v$VERSION"
           mv Reel-unsigned.ipa Reel.ipa
+          mv ReelTV-unsigned.ipa ReelTV.ipa
           SUMMARY=$(printf '%s\n' "$COMMIT_MESSAGE" | head -1)
           # Every change since the previous build, not just the last commit's first line.
           PREVIOUS=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
@@ -166,7 +342,8 @@ jobs:
           NOTES="$CHANGES"$'\n\n'"Unsigned build of ${GITHUB_SHA::7}. Install with SideStore, AltStore or Sideloadly."
           # Marked as GitHub's latest release, so .../releases/latest/download/Reel.ipa always
           # names the newest build.
-          gh release create "$TAG" Reel.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
+          NOTES="$NOTES"$'\n\n'"ReelTV.ipa is the Apple TV build: install it with Sideloadly."
+          gh release create "$TAG" Reel.ipa ReelTV.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
           # Only the newest build is kept: stores that list a repository's releases show every
           # one, and the source lists just this version, so older releases are deleted with
           # their tags once the new one is up.

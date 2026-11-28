@@ -2,7 +2,9 @@ import SwiftUI
 import AVFoundation
 import UIKit
 import UserNotifications
+#if os(iOS)
 import CoreSpotlight
+#endif
 
 /// Hands the background download session's wake-up to the download store, and notification taps
 /// to the router.
@@ -24,6 +26,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         Self.pendingBackgroundCompletion = completionHandler
     }
 
+    #if os(iOS)
     /// While the app is open, a notification shows as a banner too.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
@@ -35,6 +38,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         guard let id = info["title"] as? String, let kind = (info["kind"] as? String).flatMap(MediaKind.init(rawValue:)) else { return }
         await MainActor.run { AppStores.current?.router.open(MediaItem.placeholder(id: id, kind: kind)) }
     }
+    #endif
 }
 
 /// The app's long-lived stores, built in dependency order once.
@@ -240,14 +244,18 @@ struct ReelApp: App {
                         router.open(MediaItem.placeholder(id: id, kind: kind))
                     }
                 }
+                #if os(iOS)
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
                     if let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
                        let url = URL(string: identifier) {
                         stores.open(url)
                     }
                 }
+                #endif
         }
+        #if os(iOS)
         .commands { AppCommands(router: router) }
+        #endif
         .backgroundTask(.appRefresh(Notifier.refreshTask)) {
             await stores.backgroundRefresh()
         }

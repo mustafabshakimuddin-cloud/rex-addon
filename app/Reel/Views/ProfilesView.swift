@@ -32,16 +32,18 @@ struct ProfilesView: View {
                             Button(role: .destructive) { confirmDelete = profile } label: { Label("Delete", systemImage: "trash") }
                         }
                     }
+                    #if os(iOS)
                     .swipeActions {
                         Button { editing = profile } label: { Label("Edit", systemImage: "pencil") }.tint(.indigo)
                     }
+                    #endif
                 }
                 Button { adding = true } label: { Label("Add Profile", systemImage: "plus") }
             } footer: {
                 Text("Each profile has its own My List, history and resume points, lists, player choices and Trakt account. The debrid service, addons and other settings are shared. Long-press a profile to edit or delete it.")
             }
         }
-        .scrollContentBackground(.hidden)
+        .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Profiles")
         .sheet(item: $editing) { profile in
@@ -81,7 +83,7 @@ private struct ProfileEditor: View {
                                 .frame(width: 48, height: 48)
                                 .background(profile.symbol == symbol ? Theme.accent.opacity(0.35) : Theme.surface, in: Circle())
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .accessibilityLabel(symbol)
                     }
                 }
@@ -89,8 +91,15 @@ private struct ProfileEditor: View {
             if !profile.isDefault {
                 Toggle("Kids profile", isOn: $profile.isKids)
             }
+            #if os(tvOS)
+            Section {
+                Button("Save") { save(profile); dismiss() }
+                    .disabled(profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            #endif
         }
         .navigationTitle(profile.id.isEmpty ? "New Profile" : "Edit Profile")
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {
@@ -98,6 +107,7 @@ private struct ProfileEditor: View {
                     .disabled(profile.name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
+        #endif
     }
 }
 

@@ -95,21 +95,17 @@ struct ExploreView: View {
         .background(Theme.Backdrop())
         .scrollsToTopOnRetap(.explore)
         .navigationTitle("Explore")
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("Layout", selection: $layout) {
-                        ForEach(ExploreLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
-                    }
-                    Toggle(isOn: Bindable(settings).hideWatched) { Label("Hide Watched Films", systemImage: "eye.slash") }
-                } label: {
-                    Label("Layout", systemImage: layout.systemImage)
+        .barActions {
+            Menu {
+                Picker("Layout", selection: $layout) {
+                    ForEach(ExploreLayout.allCases) { Label($0.title, systemImage: $0.systemImage).tag($0) }
                 }
+                Toggle(isOn: Bindable(settings).hideWatched) { Label("Hide Watched Films", systemImage: "eye.slash") }
+            } label: {
+                Label("Layout", systemImage: layout.systemImage)
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { router.openSettings() } label: { Image(systemName: "gearshape") }
-                    .accessibilityLabel("Settings")
-            }
+            Button { router.openSettings() } label: { Image(systemName: "gearshape") }
+                .accessibilityLabel("Settings")
         }
     }
 }
@@ -181,7 +177,7 @@ struct AddonShelf: View {
                     AddonCatalogGrid(addon: addon, catalog: catalog)
                 }) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: item) }
                 }
             } else if failed {
@@ -217,7 +213,7 @@ struct AddonCatalogGrid: View {
                     NavigationLink(value: item) {
                         PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads))
                     }
-                    .buttonStyle(.plain)
+                    .cardButton()
                     .contextMenu { TitleContextMenu(item: item) }
                     .onAppear { if item.id == items.last?.id { Task { await loadMore() } } }
                 }
@@ -227,7 +223,7 @@ struct AddonCatalogGrid: View {
         }
         .background(Theme.Backdrop())
         .navigationTitle(catalog.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .task { if items.isEmpty { await loadMore() } }
     }
 
@@ -293,7 +289,7 @@ struct LazyShelf: View {
                     CatalogGridView(title: "\(title) \(kind.title)", kind: kind, catalog: catalog, genre: genre)
                 }) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: item) }
                 }
                 .prefetchPosters(items, width: metrics.poster)
@@ -388,7 +384,7 @@ struct CatalogGrid: View {
                     NavigationLink(value: item) {
                         PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads))
                     }
-                    .buttonStyle(.plain)
+                    .cardButton()
                     .contextMenu { TitleContextMenu(item: item) }
                     .onAppear {
                         if item.id == model.items.last?.id {
@@ -435,6 +431,6 @@ struct CatalogGridView: View {
         }
         .background(Theme.Backdrop())
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
     }
 }

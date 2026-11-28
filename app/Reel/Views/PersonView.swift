@@ -60,6 +60,18 @@ struct PersonView: View {
                 }
                 .padding(.horizontal, 20)
                 if let bio = person?.biography {
+                    #if os(tvOS)
+                    Button { withAnimation(.snappy) { expandedBio.toggle() } } label: {
+                        Text(bio)
+                            .font(.callout)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(expandedBio ? nil : 5)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .cardButton()
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: 760, alignment: .leading)
+                    #else
                     Text(bio)
                         .font(.callout)
                         .foregroundStyle(.white.opacity(0.85))
@@ -67,6 +79,7 @@ struct PersonView: View {
                         .onTapGesture { withAnimation(.snappy) { expandedBio.toggle() } }
                         .padding(.horizontal, 20)
                         .frame(maxWidth: 760, alignment: .leading)
+                    #endif
                 }
                 PersonResults(name: name)
             }
@@ -74,7 +87,7 @@ struct PersonView: View {
         }
         .background(Theme.Backdrop())
         .navigationTitle(name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .task(id: name) { person = await TMDB.shared.person(named: name, details: true) }
     }
 
@@ -139,7 +152,7 @@ struct PersonResults: View {
                 .padding(.horizontal, 20)
                 ShelfRow(title: "Known For", items: model.knownFor) { item in
                     NavigationLink(value: item) { PosterCard(item: item, width: metrics.poster, mark: library.mark(for: item, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: item) }
                 }
                 VStack(alignment: .leading, spacing: 12) {
@@ -153,7 +166,7 @@ struct PersonResults: View {
                                     }
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .cardButton()
                             .contextMenu { TitleContextMenu(item: item) }
                         }
                     }

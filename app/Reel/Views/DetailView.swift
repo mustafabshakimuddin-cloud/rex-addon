@@ -47,6 +47,8 @@ struct DetailView: View {
     @State private var width: CGFloat = 390
     @State private var height: CGFloat = 844
     @State private var expandedOverview = false
+    /// Apple TV: the title's IMDb page as a QR code, in place of Share and Open in IMDb.
+    @State private var showingLink = false
 
     private var shown: MediaItem { model.detail?.item ?? item }
     private var wide: Bool { width >= 700 }
@@ -79,7 +81,12 @@ struct DetailView: View {
         .ignoresSafeArea(edges: .top)
         .background(Theme.Backdrop())
         .navigationTitle(shown.name)
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
+        #if os(tvOS)
+        .sheet(isPresented: $showingLink) {
+            if let imdb = URL(string: "https://www.imdb.com/title/\(shown.id)/") { QRCodeSheet(url: imdb, title: shown.name) }
+        }
+        #else
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -91,6 +98,7 @@ struct DetailView: View {
             }
             ToolbarItem(placement: .topBarTrailing) { moreMenu }
         }
+        #endif
         .task {
             await model.load(item, library: library)
             if let target = primaryTarget { playback.prefetch(target, settings: settings) }
@@ -100,7 +108,9 @@ struct DetailView: View {
             activity.title = shown.name
             activity.userInfo = ["id": shown.id, "kind": shown.kind.rawValue]
             activity.isEligibleForHandoff = true
+            #if os(iOS)
             activity.isEligibleForSearch = true
+            #endif
             activity.webpageURL = URL(string: "https://www.imdb.com/title/\(shown.id)/")
         }
     }
@@ -124,9 +134,11 @@ struct DetailView: View {
             .background {
                 RemoteImage(url: shown.background ?? shown.poster, targetWidth: width * 0.75)
                     .clipped()
+                    #if os(iOS)
                     // On iPhone Duo's outer display (and beside a side bar) the picture continues
                     // under the status column instead of stopping short of the edge.
                     .backgroundExtensionEffect()
+                    #endif
             }
             .overlay {
                 ZStack {
@@ -222,10 +234,21 @@ struct DetailView: View {
                 downloadButton(target)
             }
             if let trailer = model.detail?.trailerYouTubeID, let url = URL(string: "https://www.youtube.com/watch?v=\(trailer)") {
-                Button { openURL(url) } label: { Image(systemName: "film.stack").font(.headline) }
+                Link(destination: url) { Image(systemName: "film.stack").font(.headline) }
                     .buttonStyle(.glass)
                     .accessibilityLabel("Trailer")
             }
+            #if os(tvOS)
+            // Apple TV's navigation bar has no buttons: My List and "…" sit with the others.
+            Button {
+                library.toggleWatchlist(shown)
+            } label: {
+                Image(systemName: library.isInWatchlist(shown) ? "checkmark" : "plus").font(.headline)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel(library.isInWatchlist(shown) ? "Remove from My List" : "Add to My List")
+            moreMenu.buttonStyle(.glass)
+            #endif
         }
     }
 
@@ -286,10 +309,14 @@ struct DetailView: View {
                 }
             }
             Divider()
+            #if os(tvOS)
+            Button { showingLink = true } label: { Label("Open on Your Phone", systemImage: "qrcode") }
+            #else
             if let imdb = URL(string: "https://www.imdb.com/title/\(shown.id)/") {
                 ShareLink(item: imdb, subject: Text(shown.name)) { Label("Share", systemImage: "square.and.arrow.up") }
                 Link(destination: imdb) { Label("Open in IMDb", systemImage: "arrow.up.right.square") }
             }
+            #endif
         } label: {
             Image(systemName: "ellipsis")
         }
@@ -346,11 +373,23 @@ struct DetailView: View {
     private var overview: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let text = shown.overview, !text.isEmpty {
+                #if os(tvOS)
+                // Text takes no focus on Apple TV; as a button it can be reached and opened.
+                Button { withAnimation(.snappy) { expandedOverview.toggle() } } label: {
+                    Text(text)
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.86))
+                        .lineLimit(expandedOverview ? nil : 4)
+                        .multilineTextAlignment(.leading)
+                }
+                .cardButton()
+                #else
                 Text(text)
                     .font(.body)
                     .foregroundStyle(.white.opacity(0.86))
                     .lineLimit(expandedOverview ? nil : 4)
                     .onTapGesture { withAnimation(.snappy) { expandedOverview.toggle() } }
+                #endif
             }
             if let directors = model.detail?.directors, !directors.isEmpty {
                 Text("Directed by \(directors.joined(separator: ", "))").font(.footnote).foregroundStyle(Theme.secondaryText)
@@ -424,7 +463,7 @@ struct DetailView: View {
                         NavigationLink(value: PersonRoute(name: name)) {
                             Chip(text: name, systemImage: "megaphone.fill", tint: Theme.accent)
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .accessibilityHint("Director")
                     }
                     ForEach(detail.cast, id: \.self) { name in
@@ -435,7 +474,7 @@ struct DetailView: View {
                                 Chip(text: name, systemImage: "person.fill")
                             }
                         }
-                        .buttonStyle(.plain)
+                        .cardButton()
                     }
                 }
             }
@@ -502,7 +541,7 @@ struct EpisodeRow: View {
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .cardButton()
         .disabled(!episode.hasAired)
         .contextMenu {
             Button(action: play) { Label("Play", systemImage: "play.fill") }
@@ -539,7 +578,7 @@ struct MoreLikeThis: View {
                     CatalogGridView(title: "\(genre) \(item.kind.title)", kind: item.kind, catalog: .popular, genre: genre)
                 }) { other in
                     NavigationLink(value: other) { PosterCard(item: other, width: metrics.poster, mark: library.mark(for: other, downloads: downloads)) }
-                        .buttonStyle(.plain)
+                        .cardButton()
                         .contextMenu { TitleContextMenu(item: other) }
                 }
             }

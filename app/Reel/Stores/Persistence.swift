@@ -8,7 +8,14 @@ import UIKit
 /// user's library would be gone.
 enum JSONFile {
     static let folder: URL = {
-        let folder = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
+        #if os(tvOS)
+        // Apple TV gives apps no lasting storage of their own: Caches is kept unless the device
+        // runs short of space, which is the most it offers. Back Up and Trakt guard the rest.
+        let base = FileManager.SearchPathDirectory.cachesDirectory
+        #else
+        let base = FileManager.SearchPathDirectory.applicationSupportDirectory
+        #endif
+        let folder = (try? FileManager.default.url(for: base, in: .userDomainMask, appropriateFor: nil, create: true))
             ?? FileManager.default.temporaryDirectory
         return folder
     }()

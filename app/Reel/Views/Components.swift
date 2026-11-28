@@ -13,6 +13,11 @@ struct CardMetrics {
     let landscape: CGFloat
 
     init(_ sizeClass: UserInterfaceSizeClass?, scale: CGFloat = 1) {
+        #if os(tvOS)
+        // Seen from a sofa, on a 1920-point screen.
+        poster = 240 * scale; landscape = 480 * scale
+        return
+        #endif
         if sizeClass == .regular {
             poster = 160 * scale; landscape = 340 * scale
         } else {
@@ -22,12 +27,12 @@ struct CardMetrics {
 
     /// An adaptive grid of posters.
     var posterColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: poster, maximum: poster * 1.35), spacing: 14, alignment: .top)]
+        [GridItem(.adaptive(minimum: poster, maximum: poster * 1.35), spacing: DeviceStyle.isTV ? 40 : 14, alignment: .top)]
     }
 
     /// An adaptive grid of landscape cards.
     var landscapeColumns: [GridItem] {
-        [GridItem(.adaptive(minimum: landscape, maximum: landscape * 1.6), spacing: 16, alignment: .top)]
+        [GridItem(.adaptive(minimum: landscape, maximum: landscape * 1.6), spacing: DeviceStyle.isTV ? 40 : 16, alignment: .top)]
     }
 }
 
@@ -331,29 +336,34 @@ struct ShelfRow<Data: RandomAccessCollection, Content: View, Destination: View>:
     let title: String
     var subtitle: String?
     let items: Data
-    var spacing: CGFloat = 14
+    var spacing: CGFloat = DeviceStyle.isTV ? 40 : 14
     /// Where "See All" goes; no button without one.
     var seeAll: (() -> Destination)?
     @ViewBuilder let content: (Data.Element) -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: title, subtitle: subtitle, destination: seeAll).padding(.horizontal, 20)
+            SectionHeader(title: title, subtitle: subtitle, destination: seeAll).padding(.horizontal, DeviceStyle.gutter)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: spacing) {
                     ForEach(items) { content($0) }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, DeviceStyle.gutter)
+                // Room for a focused card to grow without being cut off (Apple TV).
+                .padding(.vertical, DeviceStyle.isTV ? 24 : 0)
                 .scrollTargetLayout()
             }
             .scrollTargetBehavior(.viewAligned)
             .scrollClipDisabled()
+            #if os(tvOS)
+            .focusSection()
+            #endif
         }
     }
 }
 
 extension ShelfRow where Destination == EmptyView {
-    init(title: String, subtitle: String? = nil, items: Data, spacing: CGFloat = 14,
+    init(title: String, subtitle: String? = nil, items: Data, spacing: CGFloat = DeviceStyle.isTV ? 40 : 14,
          @ViewBuilder content: @escaping (Data.Element) -> Content) {
         self.init(title: title, subtitle: subtitle, items: items, spacing: spacing, seeAll: nil, content: content)
     }

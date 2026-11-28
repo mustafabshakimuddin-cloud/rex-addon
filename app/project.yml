@@ -5,6 +5,7 @@ options:
   developmentLanguage: en
   deploymentTarget:
     iOS: "26.0"
+    tvOS: "26.0"
   createIntermediateGroups: true
 packages:
   # Playback engine: FFmpeg demux, VideoToolbox decode, Apple's own renderers (Atmos and other
@@ -130,3 +131,89 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  # Apple TV: the same stores, services and screens as the iPhone app (Reel/), with tvOS branches
+  # where the platform differs, a Siri Remote player and a Top Shelf in place of the widgets.
+  ReelTV:
+    type: application
+    platform: tvOS
+    sources:
+      - path: Reel
+        excludes:
+          # tvOS needs a layered icon and Top Shelf images; ReelTV has its own catalogue.
+          - "Assets.xcassets"
+          - "Reel.entitlements"
+      - path: Shared
+      - path: ReelTV
+    dependencies:
+      - package: AetherEngine
+        product: AetherEngine
+      - target: ReelTopShelf
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: community.reel.tv
+        PRODUCT_NAME: Reel
+        TARGETED_DEVICE_FAMILY: "3"
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        DEAD_CODE_STRIPPING: YES
+        CODE_SIGN_ENTITLEMENTS: ReelTV/ReelTV.entitlements
+    # A shared scheme, so CI can build it with xcodebuild.
+    scheme: {}
+    info:
+      path: ReelTV/Info.plist
+      properties:
+        CFBundleDisplayName: Reel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIUserInterfaceStyle: Dark
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIBackgroundModes:
+          - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - community.reel.app.refresh
+        CFBundleURLTypes:
+          - CFBundleURLName: community.reel.tv
+            CFBundleURLSchemes:
+              - reel
+        NSUserActivityTypes:
+          - community.reel.app.title
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsForMedia: true
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
+        # Settings → Back Up and Restore serves a page to a phone on the same network.
+        NSLocalNetworkUsageDescription: Your phone connects to this Apple TV to save or restore a backup.
+        CFBundleLocalizations: [en, zh-Hans, es, fr, de]
+        CFBundleDevelopmentRegion: en
+
+  # Continue Watching and the next episodes on the Apple TV Home Screen, from the same file the
+  # iPhone widgets read.
+  ReelTopShelf:
+    type: app-extension
+    platform: tvOS
+    sources:
+      - path: ReelTopShelf
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: community.reel.tv.topshelf
+        TARGETED_DEVICE_FAMILY: "3"
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: ReelTV/ReelTV.entitlements
+        MARKETING_VERSION: $(MARKETING_VERSION)
+        SKIP_INSTALL: YES
+        # TVServices predates Swift concurrency checking; the provider runs on its own queue.
+        SWIFT_VERSION: "5.0"
+    info:
+      path: ReelTopShelf/Info.plist
+      properties:
+        CFBundleDisplayName: Reel
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.tv-top-shelf
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ContentProvider

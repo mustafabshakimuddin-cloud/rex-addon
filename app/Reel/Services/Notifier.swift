@@ -19,11 +19,24 @@ enum Notifier {
         switch settings.authorizationStatus {
         case .authorized, .provisional, .ephemeral: return true
         case .denied: return false
-        default: return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        default:
+            #if os(tvOS)
+            // Apple TV shows no notification banners; the count of new episodes goes on the icon.
+            return (try? await center.requestAuthorization(options: [.badge])) ?? false
+            #else
+            return (try? await center.requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+            #endif
         }
     }
 
+    /// The number on the app's icon: on Apple TV, where there are no banners, the new episodes
+    /// waiting and the setup that stops anything playing.
+    static func setBadge(_ count: Int) {
+        UNUserNotificationCenter.current().setBadgeCount(count) { _ in }
+    }
+
     static func downloadFinished(_ item: DownloadItem) {
+        #if os(iOS)
         guard UIApplication.shared.applicationState != .active else { return }
         let content = UNMutableNotificationContent()
         content.title = "Downloaded"
@@ -31,11 +44,13 @@ enum Notifier {
         content.sound = .default
         content.userInfo = ["title": item.target.item.id, "kind": item.target.item.kind.rawValue]
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "download:\(item.id)", content: content, trigger: nil))
+        #endif
     }
 
     /// Replaces the scheduled episode notifications with one for each episode of a followed series
     /// that airs in the next two weeks.
     static func scheduleEpisodes(_ episodes: [CalendarEpisode]) async {
+        #if os(iOS)
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(scheduledPrefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
@@ -50,6 +65,7 @@ enum Notifier {
             let trigger = UNCalendarNotificationTrigger(dateMatching: fireDate(for: episode.date), repeats: false)
             try? await center.add(UNNotificationRequest(identifier: scheduledPrefix + episode.id, content: content, trigger: trigger))
         }
+        #endif
     }
 
     static func cancelEpisodes() async {
