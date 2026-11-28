@@ -26,3 +26,15 @@ extension Image {
     init(uiImage: NSImage) { self.init(nsImage: uiImage) }
 }
 #endif
+
+extension UIImage {
+    /// The decoded bitmap's size in bytes, for the image cache's budget.
+    var memoryCost: Int {
+        #if canImport(UIKit)
+        guard let image = cgImage else { return 0 }
+        #else
+        guard let image = cgImage(forProposedRect: nil, context: nil, hints: nil) else { return 0 }
+        #endif
+        return image.bytesPerRow * image.height
+    }
+}

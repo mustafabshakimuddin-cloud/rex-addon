@@ -105,8 +105,8 @@ actor ImageLoader {
         inFlight[key] = task
         let image = await task.value
         inFlight[key] = nil
-        if let image, let cg = image.cgImage {
-            cache.setObject(image, forKey: key as NSString, cost: cg.bytesPerRow * cg.height)
+        if let image {
+            cache.setObject(image, forKey: key as NSString, cost: image.memoryCost)
         }
         return image
     }
