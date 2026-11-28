@@ -245,7 +245,10 @@ jobs:
 
       - name: Show errors
         if: failure()
-        run: grep -E "error:" sim.log | sort -u | head -120 || true
+        run: |
+          grep -E "error:" sim.log | sort -u | head -120 || true
+          # The linker's own words: missing symbols, or a library built for another platform.
+          grep -E "^ld: |Undefined symbols|building for|ignoring file|referenced from|_\$s|\"_" sim.log | sort -u | head -80 || true
 
       - name: Launch and screenshot
         timeout-minutes: 45
