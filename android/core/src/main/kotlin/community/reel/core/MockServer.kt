@@ -24,6 +24,8 @@ object MockServer : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        // The player tour plays Apple's public test stream for real, as on iOS.
+        if (request.url.host == "devstreaming-cdn.apple.com") return chain.proceed(request)
         val (status, type, body) = answer(request.url.toString())
         return Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(status).message("Mock")
             .header("Content-Type", type).header("Cache-Control", "no-store")

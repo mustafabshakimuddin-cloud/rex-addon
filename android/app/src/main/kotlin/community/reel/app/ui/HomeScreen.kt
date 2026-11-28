@@ -61,6 +61,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -179,7 +180,14 @@ fun HomeScreen() {
                     Text("Home".tr(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold,
                         modifier = Modifier.statusBarsPadding().padding(start = 20.dp, top = 8.dp))
                 }
-                for (section in sections) item(key = section.raw) { SectionView(section, model, metrics, attention, width, height) }
+                for ((index, section) in sections.withIndex()) item(key = section.raw) {
+                    // On a TV, focus landing on the featured row's buttons scrolled the list so the
+                    // picture was cut off; the whole row is brought into view instead.
+                    val keepWhole = if (section == HomeSection.HERO) Modifier.onFocusChanged { state ->
+                        if (state.hasFocus) scope.launch { list.animateScrollToItem(if (heroFirst) index else index + 1) }
+                    } else Modifier
+                    Box(keepWhole) { SectionView(section, model, metrics, attention, width, height) }
+                }
                 model.error?.let { error ->
                     item {
                         StateMessage("Offline", error, icon = Icons.Rounded.WifiOff, actionTitle = "Retry") {

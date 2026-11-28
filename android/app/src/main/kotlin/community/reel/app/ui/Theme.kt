@@ -58,7 +58,15 @@ fun ReelTheme(accent: AccentChoice, content: @Composable () -> Unit) {
         onSurfaceVariant = Theme.secondaryText,
         error = Theme.problem,
     )
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme) {
+        // Text without a colour of its own is white: outside a Surface, Compose's default is black,
+        // which left titles unreadable on the dark backdrop. The TV components read their own local.
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides Color.White,
+            androidx.tv.material3.LocalContentColor provides Color.White,
+            content = content,
+        )
+    }
 }
 
 /** The app's backdrop: near-black with a faint bloom of the accent. */

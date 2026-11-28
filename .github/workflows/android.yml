@@ -89,9 +89,13 @@ jobs:
           - kind: phone
             target: google_apis
             profile: pixel_7
+            gpu: swiftshader_indirect
           - kind: tv
             target: android-tv
             profile: tv_1080p
+            # The TV image's emulator stopped outright in swiftshader_indirect (twice, a few screens
+            # in, with no app crash logged); ANGLE over SwiftShader is the other software renderer.
+            gpu: swangle_indirect
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -115,7 +119,7 @@ jobs:
           # The TV image at 1080p ran out of memory and the emulator itself stopped.
           ram-size: 4096M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu ${{ matrix.gpu }} -no-snapshot -noaudio -no-boot-anim
           script: android/tools/screenshots.sh Reel.apk shots ${{ matrix.kind }}
       - uses: actions/upload-artifact@v4
         if: always()
