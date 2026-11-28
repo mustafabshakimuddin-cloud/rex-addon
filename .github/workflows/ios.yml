@@ -234,13 +234,15 @@ jobs:
           key: spm-tvsim-${{ hashFiles('app/project.yml') }}
           restore-keys: spm-tvsim-
 
+      # Apple silicon only: LibDovi's tvOS simulator slice has no x86_64 code, and the runner is arm64.
       - name: Build for the simulator
         run: |
           set -o pipefail
           xcodegen generate
           xcodebuild build -project Reel.xcodeproj -scheme ReelTV -sdk appletvsimulator \
             -destination 'generic/platform=tvOS Simulator' -configuration Debug -derivedDataPath build \
-            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO | tee sim.log | grep -E "error:|\*\* BUILD" || true
+            -skipPackagePluginValidation CODE_SIGNING_ALLOWED=NO \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES | tee sim.log | grep -E "error:|\*\* BUILD" || true
           grep -q "\*\* BUILD SUCCEEDED \*\*" sim.log
 
       - name: Show errors
