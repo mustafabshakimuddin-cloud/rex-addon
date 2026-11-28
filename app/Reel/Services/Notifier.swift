@@ -1,7 +1,13 @@
 import Foundation
 import UserNotifications
+#if !os(macOS)
 import BackgroundTasks
+#endif
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Local notifications: a download that finished while the app was away, and new episodes of the
 /// series you follow. Episodes are scheduled ahead for when they air, so they arrive on time even
@@ -36,8 +42,12 @@ enum Notifier {
     }
 
     static func downloadFinished(_ item: DownloadItem) {
-        #if os(iOS)
+        #if !os(tvOS)
+        #if os(macOS)
+        guard !NSApplication.shared.isActive else { return }
+        #else
         guard UIApplication.shared.applicationState != .active else { return }
+        #endif
         let content = UNMutableNotificationContent()
         content.title = "Downloaded"
         content.body = "\(item.target.displayTitle) is ready to watch offline."
@@ -50,7 +60,7 @@ enum Notifier {
     /// Replaces the scheduled episode notifications with one for each episode of a followed series
     /// that airs in the next two weeks.
     static func scheduleEpisodes(_ episodes: [CalendarEpisode]) async {
-        #if os(iOS)
+        #if !os(tvOS)
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(scheduledPrefix) }
         center.removePendingNotificationRequests(withIdentifiers: pending)
@@ -92,8 +102,13 @@ enum Notifier {
 
     /// Asks iOS to wake the app in a few hours to refresh the calendar.
     static func scheduleRefresh() {
+        #if os(macOS)
+        // The Mac has no app refresh; while the app runs, Calendar refreshes itself, and the
+        // episodes already scheduled arrive whether it runs or not.
+        #else
         let request = BGAppRefreshTaskRequest(identifier: refreshTask)
         request.earliestBeginDate = Date().addingTimeInterval(4 * 3600)
         try? BGTaskScheduler.shared.submit(request)
+        #endif
     }
 }

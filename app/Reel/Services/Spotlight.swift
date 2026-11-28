@@ -1,5 +1,5 @@
 import Foundation
-#if os(iOS)
+#if !os(tvOS)
 import CoreSpotlight
 import UniformTypeIdentifiers
 #endif
@@ -9,7 +9,7 @@ enum Spotlight {
     private static let domain = "community.reel.mylist"
 
     static func index(_ items: [MediaItem]) {
-        #if os(iOS)
+        #if !os(tvOS)
         let index = CSSearchableIndex.default()
         let entries = items.map { item -> CSSearchableItem in
             let attributes = CSSearchableItemAttributeSet(contentType: .movie)

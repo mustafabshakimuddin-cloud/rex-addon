@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 import AetherEngine
 
 /// What is actually reaching the screen: the source's format, what the engine presents, whether
@@ -12,16 +16,31 @@ import AetherEngine
 /// both are done once per tick.
 struct PlaybackInfoView: View {
     let engine: AetherEngine
+    #if os(macOS)
+    /// The Mac: the screen the player's window is on, or the main one.
+    private var screen: NSScreen? { NSApplication.shared.keyWindow?.screen ?? NSScreen.main }
+    #else
     @State private var screen: UIScreen?
+    #endif
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             content(headroom: Self.headroom(screen, potential: false) ?? 1,
                     display: AetherEngine.displayCapabilities)
         }
+        #if !os(macOS)
         .background(ScreenReader { screen = $0 }.frame(width: 0, height: 0))
+        #endif
     }
 
+    #if os(macOS)
+    /// How far above SDR white the Mac's display can go, now and at most (an XDR panel reaches 16).
+    private static func headroom(_ screen: NSScreen?, potential: Bool) -> CGFloat? {
+        guard let screen else { return nil }
+        return potential ? screen.maximumPotentialExtendedDynamicRangeColorComponentValue
+                         : screen.maximumExtendedDynamicRangeColorComponentValue
+    }
+    #else
     /// The screen's extended-range headroom. Apple TV doesn't report one; the TV's own HDR mode
     /// decides, and "Can show HDR" says whether it is on.
     private static func headroom(_ screen: UIScreen?, potential: Bool) -> CGFloat? {
@@ -32,6 +51,7 @@ struct PlaybackInfoView: View {
         return nil
         #endif
     }
+    #endif
 
     @ViewBuilder
     private func content(headroom: CGFloat, display: DisplayCapabilities) -> some View {
@@ -40,17 +60,29 @@ struct PlaybackInfoView: View {
             section("Display") {
                 line("Can show HDR", yesNo(display.supportsHDR))
                 line("Dolby Vision", yesNo(display.supportsDolbyVision))
-                #if os(iOS)
+                #if !os(tvOS)
                 line("Highlight boost now", Self.headroomText(headroom))
                 #endif
                 if let potential = Self.headroom(screen, potential: true), potential > 1 {
                     line("Highlight boost max", Self.headroomText(potential))
                 }
-                #if os(iOS)
+                #if !os(tvOS)
                 if ProcessInfo.processInfo.isLowPowerModeEnabled {
                     line("Low Power Mode", "On")
                 }
                 #endif
+            }
+
+            if let processing = engine.activeVideoProcessing {
+                section("Tone mapping") {
+                    if let reason = processing.disabledReason {
+                        line("Status", "Off: \(reason)")
+                    } else {
+                        line("Status", "On")
+                    }
+                    line("From", "\(Int(processing.sourcePeakNits)) nit (\(processing.sourcePeak == .maxCLL ? "MaxCLL" : "mastering"))")
+                    line("To this display", "\(Int(processing.targetPeakNits)) nit")
+                }
             }
 
             section("Video") {
@@ -210,6 +242,7 @@ struct PlaybackInfoView: View {
     }
 }
 
+#if !os(macOS)
 /// Reports the screen the player's window is on. On iPhone Duo the two displays are different
 /// screens with different headroom, so the main screen is not necessarily the right one to ask.
 private struct ScreenReader: UIViewRepresentable {
@@ -233,3 +266,4 @@ private struct ScreenReader: UIViewRepresentable {
         }
     }
 }
+#endif

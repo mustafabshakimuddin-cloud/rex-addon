@@ -302,13 +302,118 @@ jobs:
           path: app/shots/
           retention-days: 14
 
+  # The Mac app: built unsigned, signed ad hoc (Apple silicon needs a signature to run), launched
+  # on each screen with -ReelMock and screenshotted, then zipped. Shots are printed into the log
+  # as small JPEGs (base64) as well as uploaded.
+  macos:
+    name: Mac app
+    runs-on: xcode-27
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          [ -z "$XCODE" ] && XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          sw_vers
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/build/SourcePackages
+            ~/Library/Caches/org.swift.swiftpm
+          key: spm-mac-${{ hashFiles('app/project.yml') }}
+          restore-keys: spm-mac-
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodegen generate
+          xcodebuild build -project Reel.xcodeproj -scheme ReelMac -destination 'platform=macOS,arch=arm64' \
+            -configuration Release -derivedDataPath build -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO MARKETING_VERSION="0.1.${{ github.run_number }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" | tee build.log | grep -E "error:|\*\* BUILD" || true
+          grep -q "\*\* BUILD SUCCEEDED \*\*" build.log
+
+      - name: Show errors
+        if: failure()
+        run: |
+          grep -E "error:" build.log | sort -u | head -120 || true
+          grep -E "^ld: |Undefined symbols|ignoring file|referenced from" build.log | sort -u | head -60 || true
+
+      - name: Sign and zip
+        run: |
+          rm -rf Reel.app Reel-macOS.zip
+          cp -R build/Build/Products/Release/Reel.app .
+          find Reel.app -name "*.dSYM" -prune -exec rm -rf {} +
+          # Inner code first, then the app.
+          find Reel.app/Contents/Frameworks -maxdepth 1 \( -name "*.framework" -o -name "*.dylib" \) -exec codesign --force --sign - {} \; 2>/dev/null || true
+          codesign --force --sign - Reel.app
+          codesign --verify --deep --strict Reel.app && echo "signature ok"
+          ditto -c -k --keepParent Reel.app Reel-macOS.zip
+          ls -lh Reel-macOS.zip
+          du -sh Reel.app/Contents/Frameworks/* 2>/dev/null | sort -h | tail -6
+
+      - name: Launch and screenshot
+        timeout-minutes: 40
+        run: |
+          mkdir -p shots
+          CRASHES=""
+          BIN=Reel.app/Contents/MacOS/Reel
+          for SCREEN in home setup detail sources player movies calendar library search settings status; do
+            pkill -x Reel 2>/dev/null || true
+            sleep 1
+            "$BIN" -ReelShot "$SCREEN" -ReelMock > "shots/$SCREEN.log" 2>&1 &
+            if [ "$SCREEN" = home ]; then sleep 30; else sleep 14; fi
+            # Bring the app's windows forward for the shot.
+            osascript -e 'tell application "System Events" to set frontmost of (first process whose name is "Reel") to true' 2>/dev/null || true
+            sleep 1
+            if ! pgrep -x Reel >/dev/null; then
+              echo "::error::Mac: the app is not running on the $SCREEN screen (crashed?)"
+              CRASHES="$CRASHES $SCREEN"
+              tail -30 "shots/$SCREEN.log"
+              REPORT=$(ls -t ~/Library/Logs/DiagnosticReports/Reel*.ips 2>/dev/null | head -1)
+              if [ -n "$REPORT" ]; then python3 tools/crash_summary.py "$REPORT" || true; rm -f "$REPORT"; fi
+            fi
+            screencapture -x "shots/Mac-$SCREEN.png" || continue
+            sips -Z 720 -s format jpeg -s formatOptions 55 "shots/Mac-$SCREEN.png" --out "shots/Mac-$SCREEN-small.jpg" >/dev/null
+            echo "=== SHOT Mac-$SCREEN ==="
+            base64 -i "shots/Mac-$SCREEN-small.jpg" | tr -d '\n'; echo
+            echo "=== END SHOT ==="
+          done
+          pkill -x Reel 2>/dev/null || true
+          if [ -n "$CRASHES" ]; then echo "::error::The app stopped on:$CRASHES"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reel-macOS
+          path: app/Reel-macOS.zip
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-screenshots
+          path: app/shots/
+          retention-days: 14
+
   # Builds from main are also published as GitHub's latest release, which gives the .ipa a
   # permanent direct link that needs no GitHub sign-in and opens straight in AltStore/Sideloadly:
   #   https://github.com/<owner>/Reel-Media-Center/releases/latest/download/Reel.ipa
   # (The release tagged "latest" holds only source.json.)
   release:
     name: Publish the release and the SideStore source
-    needs: [ build, tvos ]
+    needs: [ build, tvos, macos ]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -321,6 +426,9 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ReelTV-unsigned-ipa
+      - uses: actions/download-artifact@v4
+        with:
+          name: Reel-macOS
       # Each build gets its own release (v0.1.N), which replaces the previous one, plus the rolling
       # "latest" release that holds only source.json.
       # SideStore / AltStore / Feather add the source by:
@@ -347,8 +455,8 @@ jobs:
           NOTES="$CHANGES"$'\n\n'"Unsigned build of ${GITHUB_SHA::7}. Install with SideStore, AltStore or Sideloadly."
           # Marked as GitHub's latest release, so .../releases/latest/download/Reel.ipa always
           # names the newest build.
-          NOTES="$NOTES"$'\n\n'"ReelTV.ipa is the Apple TV build: install it with Sideloadly."
-          gh release create "$TAG" Reel.ipa ReelTV.ipa --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
+          NOTES="$NOTES"$'\n\n'"ReelTV.ipa is the Apple TV build: install it with Sideloadly. Reel-macOS.zip is the Mac app (Apple silicon, macOS 26): unzip it, move Reel to Applications, and open it with right-click → Open the first time."
+          gh release create "$TAG" Reel.ipa ReelTV.ipa Reel-macOS.zip --title "Reel $VERSION" --notes "$NOTES" --target "$GITHUB_SHA" --latest
           # Only the newest build is kept: stores that list a repository's releases show every
           # one, and the source lists just this version, so older releases are deleted with
           # their tags once the new one is up.

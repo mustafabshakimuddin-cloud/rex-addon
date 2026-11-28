@@ -88,7 +88,7 @@ struct DetailView: View {
         }
         #else
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .trailingBar) {
                 Button {
                     library.toggleWatchlist(shown)
                 } label: {
@@ -96,7 +96,7 @@ struct DetailView: View {
                 }
                 .accessibilityLabel(library.isInWatchlist(shown) ? "Remove from My List" : "Add to My List")
             }
-            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+            ToolbarItem(placement: .trailingBar) { moreMenu }
         }
         #endif
         .task {

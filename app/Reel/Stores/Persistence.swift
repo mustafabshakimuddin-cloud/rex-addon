@@ -15,8 +15,13 @@ enum JSONFile {
         #else
         let base = FileManager.SearchPathDirectory.applicationSupportDirectory
         #endif
-        let folder = (try? FileManager.default.url(for: base, in: .userDomainMask, appropriateFor: nil, create: true))
+        var folder = (try? FileManager.default.url(for: base, in: .userDomainMask, appropriateFor: nil, create: true))
             ?? FileManager.default.temporaryDirectory
+        #if os(macOS)
+        // A Mac app outside the sandbox shares Application Support with every other app.
+        folder = folder.appendingPathComponent(Bundle.main.bundleIdentifier ?? "community.reel.mac", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        #endif
         return folder
     }()
 
@@ -92,12 +97,8 @@ final class SnapshotWriter: @unchecked Sendable {
     /// Writes now (still off the main thread). On iOS the app asks for background time so the
     /// write finishes even when this runs on the way into the background.
     func flush(_ encode: @escaping @Sendable () -> Data?) {
-        #if canImport(UIKit)
         let done = BackgroundTime.begin("Save \(url.lastPathComponent)")
         enqueue(after: 0, encode: encode, finished: done)
-        #else
-        enqueue(after: 0, encode: encode, finished: nil)
-        #endif
     }
 
     /// Blocks until every queued write has finished. For tests.
@@ -154,6 +155,30 @@ enum BackgroundTime {
             DispatchQueue.main.async { [id] in
                 if id != .invalid { UIApplication.shared.endBackgroundTask(id) }
             }
+        }
+    }
+}
+#endif
+#if !canImport(UIKit)
+/// On the Mac, an activity that keeps the app from being suspended (App Nap, sudden termination)
+/// until the work is done; ends itself once.
+enum BackgroundTime {
+    static func begin(_ name: String) -> @Sendable () -> Void {
+        let box = ActivityBox(ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .suddenTerminationDisabled], reason: name))
+        return { box.end() }
+    }
+
+    private final class ActivityBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var token: NSObjectProtocol?
+        init(_ token: NSObjectProtocol) { self.token = token }
+
+        func end() {
+            lock.lock()
+            let token = self.token
+            self.token = nil
+            lock.unlock()
+            if let token { ProcessInfo.processInfo.endActivity(token) }
         }
     }
 }

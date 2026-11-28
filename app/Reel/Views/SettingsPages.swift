@@ -12,10 +12,9 @@ struct AddonsView: View {
         Form {
             Section {
                 TextField("https://…/manifest.json", text: $address)
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
+                    .urlField()
                     .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+                    .plainField()
                     .onSubmit(add)
                 HStack {
                     Button("Add Addon", action: add)
@@ -65,7 +64,7 @@ struct AddonsView: View {
                     }
                     #endif
                 }
-                #if os(iOS)
+                #if !os(tvOS)
                 .onDelete { settings.addons.remove(atOffsets: $0) }
                 .onMove { settings.addons.move(fromOffsets: $0, toOffset: $1) }
                 #endif
@@ -155,7 +154,7 @@ struct TraktSettingsView: View {
                                 .font(.system(size: 40, weight: .bold, design: .monospaced))
                                 .textSelection(.enabled)
                             HStack {
-                                Button("Copy Code", systemImage: "doc.on.doc") { UIPasteboard.general.string = code }
+                                Button("Copy Code", systemImage: "doc.on.doc") { Clipboard.copy(code) }
                                     .buttonStyle(.glass)
                                 Button("Open Trakt", systemImage: "safari") {
                                     if let link = URL(string: url) { openURL(link) }
@@ -176,10 +175,10 @@ struct TraktSettingsView: View {
                     Section {
                         TextField("Client ID", text: $clientID)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .plainField()
                         SecureField("Client Secret", text: $clientSecret)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .plainField()
                         Button("Connect") { trakt.connect(clientID: clientID, clientSecret: clientSecret) }
                             .disabled(clientID.isEmpty || clientSecret.isEmpty)
                         if case let .failed(message) = trakt.signIn {
@@ -306,7 +305,7 @@ struct HomeLayoutView: View {
                     }
                     #endif
                 }
-                #if os(iOS)
+                #if !os(tvOS)
                 .onMove { settings.homeOrder.move(fromOffsets: $0, toOffset: $1) }
                 #endif
             } footer: {
@@ -420,7 +419,7 @@ struct BackupView: View {
         .clearListBackground()
         .background(Theme.Backdrop())
         .navigationTitle("Back Up and Restore")
-        #if os(iOS)
+        #if !os(tvOS)
         .task { exportURL = Backup.write(library: library, memory: memory, lists: lists) }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json]) { result in
             if case let .success(url) = result { confirmRestore = url }
@@ -459,7 +458,7 @@ struct TMDBSettingsView: View {
                 SecureField("API key or read access token", text: $draft)
                     .textContentType(.password)
                     .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+                    .plainField()
                 HStack {
                     Button("Save and Test") { Task { await save() } }
                         .disabled(state == .testing)

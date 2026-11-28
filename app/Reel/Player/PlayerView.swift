@@ -1,6 +1,9 @@
-#if os(iOS)
+#if !os(tvOS)
 import SwiftUI
 import AVKit
+#if os(macOS)
+import AppKit
+#endif
 import AetherEngine
 
 struct PlayerView: View {
@@ -49,8 +52,17 @@ struct PlayerView: View {
         }
         .foldObserver($fold)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        #if os(iOS)
         .statusBarHidden(!controlsVisible && fold == nil)
         .persistentSystemOverlays(controlsVisible || fold != nil ? .automatic : .hidden)
+        #else
+        // The Mac: moving the pointer brings the controls back; it hides with them.
+        .onContinuousHover { phase in
+            if case .active = phase, !controlsVisible { controlsVisible = true; scheduleHide() }
+        }
+        .onChange(of: controlsVisible) { _, visible in if !visible { NSCursor.setHiddenUntilMouseMoves(true) } }
+        .frame(minWidth: 480, minHeight: 270)
+        #endif
         .preferredColorScheme(.dark)
         .animation(.easeInOut(duration: 0.22), value: controlsVisible)
         .animation(.spring(duration: 0.35), value: panel)
@@ -308,6 +320,7 @@ struct PlayerView: View {
             artwork: target.episode?.thumbnail ?? target.item.poster,
             localSubtitles: session.localSubtitles,
             audioShaping: settings.audioShaping,
+            hdr: HDRDisplay.options(settings),
             onProgress: { [weak lib = library, isCloud = session.isCloud] position, duration in
                 guard !isCloud else { return }
                 lib?.record(target, position: position, duration: duration, live: true)
@@ -428,7 +441,12 @@ struct PlayerView: View {
                 if skipFlash == flash { withAnimation(.easeIn(duration: 0.25)) { skipFlash = nil } }
             }
         } else {
+            #if os(macOS)
+            // As in every Mac player, a double click in the middle goes full screen and back.
+            NSApplication.shared.keyWindow?.toggleFullScreen(nil)
+            #else
             model.fillsScreen.toggle()
+            #endif
         }
     }
 

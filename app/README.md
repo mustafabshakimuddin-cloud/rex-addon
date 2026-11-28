@@ -132,15 +132,45 @@ install it with Sideloadly, which signs it with your Apple ID (a free one lasts 
   AirPlay (Apple TV is the receiver). Apple TV keeps app data only in a cache it may clear when
   storage runs short, so keep a backup, or connect Trakt.
 
+## Mac
+
+`ReelMac` is the same app for macOS 26 on Apple silicon: the screens in `Reel/` with macOS
+branches, plus `ReelMac/`. Every release carries `Reel-macOS.zip`
+(<https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/Reel-macOS.zip>).
+Unzip it and move Reel to Applications. It is signed ad hoc rather than by a developer ID, so the
+first time, right-click it and choose Open (or allow it under System Settings → Privacy &
+Security).
+
+- **Window and menus**: a sidebar for Home, Explore, Calendar, Library and Search; the Go menu and
+  shortcuts of the iPad app (⌘1–4, ⌘F, ⌘Y, ⇧⌘S, ⌘, for Settings); the attention count on the Dock
+  icon. Closing the window keeps Reel running, as Mac apps do.
+- **Player**: a window of its own, which can be resized, moved to another display or made full
+  screen while the library stays open. Moving the pointer shows the controls; double-click the
+  middle for full screen, the sides to skip 10 seconds; pinch to fill. Keys: space, ←/→ (⇧ for a
+  minute), F to fill, C for subtitles, Esc to close. AirPlay and Picture in Picture are in the
+  controls.
+- **HDR on This Display** (Settings → Player): Dolby Vision and HDR10+ go through Apple's own
+  mapping, which fits them to any HDR display, HDR10 monitors without Dolby Vision included. With
+  *Map Dolby Vision to this display* on, the app tells the engine the display can take Dolby
+  Vision, so Profile 7 and AV1 Dolby Vision reach that mapping instead of playing as their HDR10
+  base layer; if macOS refuses, the engine falls back to the base layer in place. *Tone map HDR10
+  to this display* maps HDR10 graded brighter than the monitor down to its peak (the engine's
+  BT.2390 tone map), so highlights roll off instead of clipping. The peak is estimated from the
+  display's HDR headroom, or set it from the monitor's specifications. While a title is tone
+  mapped it plays on the engine's own renderer, without Picture in Picture or AirPlay of the
+  picture. Playback info shows whether the tone map runs, from which peak and to which.
+- **Not on the Mac**: Live Activities and the iPhone widgets (no Mac widget extension yet), the
+  background refresh (episode notifications scheduled earlier still arrive).
+
 ## Building
 
 ```sh
 cd app
 xcodegen generate
-open Reel.xcodeproj      # schemes: Reel (iPhone and iPad), ReelTV (Apple TV)
+open Reel.xcodeproj      # schemes: Reel (iPhone and iPad), ReelTV (Apple TV), ReelMac (Mac)
 ```
 
-The icon is drawn by `tools/make_icon.py`, and the layered Apple TV icon and Top Shelf images by `tools/make_tv_icon.py`.
+The icon is drawn by `tools/make_icon.py`, and the layered Apple TV icon and Top Shelf images by `tools/make_tv_icon.py`, the Mac icon set by `tools/make_mac_icon.py`.
 
 ## Licences
 

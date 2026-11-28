@@ -32,7 +32,7 @@ struct ProfilesView: View {
                             Button(role: .destructive) { confirmDelete = profile } label: { Label("Delete", systemImage: "trash") }
                         }
                     }
-                    #if os(iOS)
+                    #if !os(tvOS)
                     .swipeActions {
                         Button { editing = profile } label: { Label("Edit", systemImage: "pencil") }.tint(.indigo)
                     }
@@ -99,7 +99,7 @@ private struct ProfileEditor: View {
             #endif
         }
         .navigationTitle(profile.id.isEmpty ? "New Profile" : "Edit Profile")
-        #if os(iOS)
+        #if !os(tvOS)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             ToolbarItem(placement: .confirmationAction) {

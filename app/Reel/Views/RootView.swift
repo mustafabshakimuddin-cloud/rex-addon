@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 enum AppTab: Hashable {
     case home, explore, calendar, library, search
@@ -148,6 +151,9 @@ extension View {
 }
 
 struct RootView: View {
+    #if os(macOS)
+    @Environment(\.openWindow) private var openWindow
+    #endif
     @Environment(AppSettings.self) private var settings
     @Environment(Library.self) private var library
     @Environment(PlaybackCenter.self) private var playback
@@ -162,7 +168,7 @@ struct RootView: View {
         // unfolded iPhone Duo (and iPad) the adaptable style turns it into a side rail/sidebar.
         TabView(selection: router.tabSelection) {
             Tab("Home", systemImage: "house.fill", value: AppTab.home) { homeTab }
-                #if os(iOS)
+                #if !os(tvOS)
                 .badge(attention.badgeCount)
                 #endif
             Tab("Explore", systemImage: "safari", value: AppTab.explore) { exploreTab }
@@ -194,7 +200,27 @@ struct RootView: View {
                     }
             }
             .environment(\.cardScale, settings.posterSize.scale)
+            #if os(macOS)
+            .frame(minWidth: 640, idealWidth: 720, minHeight: 620, idealHeight: 760)
+            #endif
         }
+        #if os(macOS)
+        // A sheet on the Mac, which has no full-screen covers; the player is a window of its own
+        // (ReelMac/PlayerWindow.swift), opened whenever a session starts.
+        .sheet(isPresented: Bindable(router).showingSetup) {
+            SetupView().frame(minWidth: 620, idealWidth: 680, minHeight: 640, idealHeight: 720)
+        }
+        .sheet(item: Bindable(playback).choosingSource) { target in
+            SourcesSheet(target: target).frame(minWidth: 680, idealWidth: 760, minHeight: 620, idealHeight: 760)
+        }
+        .onChange(of: playback.session?.id) { _, id in
+            if id != nil { openWindow(id: "player") }
+        }
+        // What needs you, on the Dock icon.
+        .onChange(of: attention.badgeCount, initial: true) { _, count in
+            NSApplication.shared.dockTile.badgeLabel = count > 0 ? "\(count)" : nil
+        }
+        #else
         .fullScreenCover(isPresented: Bindable(router).showingSetup) {
             SetupView()
         }
@@ -208,6 +234,7 @@ struct RootView: View {
         .fullScreenCover(item: Bindable(playback).session, onDismiss: { playback.playerDismissed() }) { session in
             PlayerView(session: session)
         }
+        #endif
         .task {
             if ScreenshotTour.isActive {
                 ScreenshotTour.run(router: router, playback: playback)
@@ -342,7 +369,7 @@ struct AlertToast: View {
                 .glassEffect(.regular, in: .rect(cornerRadius: 22))
                 .padding(.horizontal, 16)
                 .padding(.top, 6)
-                #if os(iOS)
+                #if !os(tvOS)
                 .onTapGesture { alerts.dismissCurrent() }
                 .gesture(DragGesture(minimumDistance: 12).onEnded { value in
                     if value.translation.height < -10 { alerts.dismissCurrent() }
@@ -367,7 +394,7 @@ struct AlertToast: View {
     }
 }
 
-#if os(iOS)
+#if !os(tvOS)
 /// Keyboard shortcuts for iPad and a hardware keyboard; they appear in the shortcut overlay
 /// when ⌘ is held.
 struct AppCommands: Commands {

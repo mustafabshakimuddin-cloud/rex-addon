@@ -124,7 +124,7 @@ struct Scrubber: View {
             .frame(height: dragging ? 8 : 5)
             .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
-            #if os(iOS)
+            #if !os(tvOS)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
@@ -161,6 +161,18 @@ struct AirPlayButton: UIViewRepresentable {
         return view
     }
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+#elseif os(macOS)
+/// AirPlay to a TV or speakers, from the Mac.
+struct AirPlayButton: NSViewRepresentable {
+    func makeNSView(context: Context) -> AVRoutePickerView {
+        let view = AVRoutePickerView()
+        view.isRoutePickerButtonBordered = false
+        view.setRoutePickerButtonColor(.white, for: .normal)
+        view.setRoutePickerButtonColor(NSColor(Theme.accent), for: .active)
+        return view
+    }
+    func updateNSView(_ nsView: AVRoutePickerView, context: Context) {}
 }
 #endif
 

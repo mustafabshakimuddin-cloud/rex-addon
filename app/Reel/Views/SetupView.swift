@@ -91,7 +91,7 @@ struct SetupView: View {
                     SecureField("API key", text: $keyDraft)
                         .textContentType(.password)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .plainField()
                         .padding(12)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .onSubmit { Task { await test() } }

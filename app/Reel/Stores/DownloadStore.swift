@@ -1,7 +1,11 @@
 import Foundation
 import Observation
 import Combine
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// One title saved for offline viewing.
 struct DownloadItem: Codable, Identifiable, Hashable {

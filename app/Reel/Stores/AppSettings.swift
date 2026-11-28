@@ -60,6 +60,16 @@ final class AppSettings {
     /// Raise sources mixed quietly to a common loudness.
     var liftQuietSources: Bool { didSet { defaults.set(liftQuietSources, forKey: Keys.liftQuiet) } }
 
+    // MARK: HDR on this display (Mac)
+    /// Map HDR10 brighter than the display down to its peak, with the engine's BT.2390 tone map,
+    /// instead of leaving it to the monitor.
+    var toneMapHDR: Bool { didSet { defaults.set(toneMapHDR, forKey: Keys.toneMapHDR) } }
+    /// The display's peak brightness in nit; 0 estimates it from the display.
+    var displayPeakNits: Double { didSet { defaults.set(displayPeakNits, forKey: Keys.displayPeakNits) } }
+    /// Send Dolby Vision to Apple's own Dolby Vision mapping on any HDR display, rather than only
+    /// its HDR10 base layer.
+    var mapDolbyVision: Bool { didSet { defaults.set(mapDolbyVision, forKey: Keys.mapDolbyVision) } }
+
     /// The engine's audio shaping for these settings; inactive when all are off.
     var audioShaping: AudioShaping {
         AudioShaping(dialogueGainDB: dialogueBoostDB, compressor: nightMode ? .night : nil,
@@ -155,6 +165,9 @@ final class AppSettings {
         nightMode = defaults.object(forKey: Keys.nightMode) as? Bool ?? false
         dialogueBoostDB = defaults.object(forKey: Keys.dialogueBoost) as? Double ?? 0
         liftQuietSources = defaults.object(forKey: Keys.liftQuiet) as? Bool ?? false
+        toneMapHDR = defaults.object(forKey: Keys.toneMapHDR) as? Bool ?? true
+        displayPeakNits = defaults.object(forKey: Keys.displayPeakNits) as? Double ?? 0
+        mapDolbyVision = defaults.object(forKey: Keys.mapDolbyVision) as? Bool ?? true
         torrentioServer = defaults.string(forKey: Keys.torrentioServer) ?? Torrentio.base
         priorityLanguages = defaults.stringArray(forKey: Keys.priorityLanguages) ?? []
         perQualityLimit = defaults.object(forKey: Keys.perQualityLimit) as? Int ?? 0
@@ -292,6 +305,9 @@ final class AppSettings {
         static let autoSkipIntro = "player.autoSkipIntro"
         static let autoSkipRecap = "player.autoSkipRecap"
         static let nightMode = "player.nightMode"
+        static let toneMapHDR = "player.toneMapHDR"
+        static let displayPeakNits = "player.displayPeakNits"
+        static let mapDolbyVision = "player.mapDolbyVision"
         static let dialogueBoost = "player.dialogueBoost"
         static let liftQuiet = "player.liftQuiet"
         static let torrentioServer = "torrentio.server"

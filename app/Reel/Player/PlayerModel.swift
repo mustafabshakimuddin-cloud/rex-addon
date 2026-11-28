@@ -4,7 +4,11 @@ import CoreGraphics
 import AVKit
 import Combine
 import MediaPlayer
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 import AetherEngine
 
 /// One AetherEngine for the app's lifetime, as its author requires: hosts call `load(url:)` for each
@@ -175,6 +179,7 @@ final class PlayerModel {
     func start(url: URL, title: String, subtitle: String?, startAt: Double?,
                audioLanguages: [String], subtitleLanguages: [String], artwork: URL? = nil,
                localSubtitles: [URL] = [], audioShaping: AudioShaping = AudioShaping(),
+               hdr: HDRDisplay.Options = HDRDisplay.Options(),
                onProgress: @escaping (Double, Double) -> Void) {
         guard !started, let engine else { return }
         started = true
@@ -185,6 +190,8 @@ final class PlayerModel {
         options.preferredAudioLanguages = audioLanguages
         options.preferredSubtitleLanguages = subtitleLanguages
         options.audioShaping = audioShaping
+        options.videoProcessing = hdr.videoProcessing
+        options.panelPresentsDolbyVision = hdr.presentsDolbyVision
         loadOptions = options
         var info: [String: Any] = [MPMediaItemPropertyTitle: title]
         if let subtitle { info[MPMediaItemPropertyArtist] = subtitle }
@@ -203,7 +210,9 @@ final class PlayerModel {
         Task {
             // We mount the engine's layer ourselves rather than AVPlayerViewController, so we
             // activate the session the engine declared (category .playback, multichannel).
+            #if !os(macOS)
             try? AVAudioSession.sharedInstance().setActive(true)
+            #endif
             do {
                 _ = try await engine.load(url: url, startPosition: startAt, options: options)
                 for file in localSubtitles {

@@ -2,6 +2,9 @@ import SwiftUI
 #if os(tvOS)
 import CoreImage.CIFilterBuiltins
 #endif
+#if os(macOS)
+import AppKit
+#endif
 
 /// The few places where iPhone and iPad (touch) and Apple TV (focus and the Siri Remote) need
 /// different building blocks. Screens use these instead of branching themselves.
@@ -28,12 +31,12 @@ extension View {
         #endif
     }
 
-    /// The compact navigation title of iPhone and iPad; Apple TV has one title style.
+    /// The compact navigation title of iPhone and iPad; Apple TV and the Mac have one title style.
     @ViewBuilder func inlineNavigationTitle() -> some View {
-        #if os(tvOS)
-        self
-        #else
+        #if os(iOS)
         navigationBarTitleDisplayMode(.inline)
+        #else
+        self
         #endif
     }
 
@@ -51,7 +54,7 @@ extension View {
         }
         #else
         toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) { content() }
+            ToolbarItemGroup(placement: .trailingBar) { content() }
         }
         #endif
     }
@@ -180,6 +183,8 @@ extension View {
     @ViewBuilder func groupedList() -> some View {
         #if os(tvOS)
         listStyle(.grouped)
+        #elseif os(macOS)
+        listStyle(.inset)
         #else
         listStyle(.insetGrouped)
         #endif
@@ -216,3 +221,59 @@ extension View {
 }
 
 enum ControlSizeChoice { case small, mini }
+
+#if !os(tvOS)
+extension ToolbarItemPlacement {
+    /// The trailing end of the navigation bar on iPhone and iPad; the window toolbar on the Mac.
+    static var trailingBar: ToolbarItemPlacement {
+        #if os(macOS)
+        .primaryAction
+        #else
+        .topBarTrailing
+        #endif
+    }
+}
+#endif
+
+extension View {
+    /// A field for an address: no capitals, a URL keyboard where there is one.
+    @ViewBuilder func urlField() -> some View {
+        #if os(macOS)
+        autocorrectionDisabled()
+        #else
+        keyboardType(.URL).textContentType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+        #endif
+    }
+
+    /// A field for a key, code or name typed exactly: no capitals or corrections.
+    @ViewBuilder func plainField() -> some View {
+        #if os(macOS)
+        autocorrectionDisabled()
+        #else
+        textInputAutocapitalization(.never).autocorrectionDisabled()
+        #endif
+    }
+
+    /// A field for a code shown in capitals.
+    @ViewBuilder func capitalsField() -> some View {
+        #if os(macOS)
+        autocorrectionDisabled()
+        #else
+        textInputAutocapitalization(.characters).autocorrectionDisabled()
+        #endif
+    }
+}
+
+#if !os(tvOS)
+/// The pasteboard, on iPhone and iPad (UIKit) and on the Mac (AppKit).
+enum Clipboard {
+    static func copy(_ text: String) {
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+    }
+}
+#endif

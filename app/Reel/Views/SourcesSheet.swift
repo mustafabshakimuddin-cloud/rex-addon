@@ -165,7 +165,11 @@ struct SourcesSheet: View {
             .searchable(text: $text, prompt: "Release, group, language")
             .barActions { sortMenu }
             #else
+            #if os(macOS)
+            .searchable(text: $text, prompt: "Release, group, language")
+            #else
             .searchable(text: $text, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Release, group, language")
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close", systemImage: "xmark") { dismiss() }
@@ -326,7 +330,7 @@ struct SourcesSheet: View {
         }
         .cardButton()
         .disabled(!source.isPlayable)
-        #if os(iOS)
+        #if !os(tvOS)
         .swipeActions(edge: .trailing) {
             if source.isCached {
                 Button { model.verify(source, playback: playback, settings: settings) } label: { Label("Check", systemImage: "checkmark.seal") }

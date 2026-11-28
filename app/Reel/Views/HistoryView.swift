@@ -108,7 +108,7 @@ struct HistoryView: View {
         }
         .cardButton()
         .listRowBackground(Theme.surface)
-        #if os(iOS)
+        #if !os(tvOS)
         .swipeActions {
             Button(role: .destructive) { library.clearProgress(entry) } label: { Label("Remove", systemImage: "trash") }
         }

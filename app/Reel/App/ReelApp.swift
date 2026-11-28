@@ -1,11 +1,43 @@
 import SwiftUI
 import AVFoundation
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 import UserNotifications
-#if os(iOS)
+#if !os(tvOS)
 import CoreSpotlight
 #endif
 
+#if os(macOS)
+/// The Mac: notification taps go to the router, and everything is saved before the app quits.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    static var pendingBackgroundCompletion: (() -> Void)?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UNUserNotificationCenter.current().delegate = self
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        AppStores.current?.wentToBackground()
+    }
+
+    /// Closing the last window leaves the app running, as Mac apps do; the Dock icon opens it again.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let info = response.notification.request.content.userInfo
+        guard let id = info["title"] as? String, let kind = (info["kind"] as? String).flatMap(MediaKind.init(rawValue:)) else { return }
+        await MainActor.run { AppStores.current?.router.open(MediaItem.placeholder(id: id, kind: kind)) }
+    }
+}
+#else
 /// Hands the background download session's wake-up to the download store, and notification taps
 /// to the router.
 @MainActor
@@ -40,6 +72,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     }
     #endif
 }
+#endif
 
 /// The app's long-lived stores, built in dependency order once.
 @MainActor
@@ -188,7 +221,11 @@ extension MediaItem {
 
 @main
 struct ReelApp: App {
+    #if os(macOS)
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #else
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    #endif
     @State private var settings: AppSettings
     @State private var library: Library
     @State private var playback: PlaybackCenter
@@ -204,8 +241,10 @@ struct ReelApp: App {
     private let stores: AppStores
 
     init() {
+        #if !os(macOS)
         // Play sound with the silent switch on, like any video app.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        #endif
         let stores = AppStores()
         self.stores = stores
         _settings = State(wrappedValue: stores.settings)
@@ -223,20 +262,7 @@ struct ReelApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environment(settings)
-                .environment(library)
-                .environment(playback)
-                .environment(router)
-                .environment(memory)
-                .environment(downloads)
-                .environment(trakt)
-                .environment(alerts)
-                .environment(upcoming)
-                .environment(lists)
-                .environment(profiles)
-                .preferredColorScheme(.dark)
-                .tint(settings.accent.accent)
+            withStores(RootView())
                 .onOpenURL { stores.open($0) }
                 .onContinueUserActivity(TitleActivity.type) { activity in
                     if let id = activity.userInfo?["id"] as? String,
@@ -244,7 +270,7 @@ struct ReelApp: App {
                         router.open(MediaItem.placeholder(id: id, kind: kind))
                     }
                 }
-                #if os(iOS)
+                #if !os(tvOS)
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
                     if let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
                        let url = URL(string: identifier) {
@@ -253,12 +279,17 @@ struct ReelApp: App {
                 }
                 #endif
         }
-        #if os(iOS)
+        #if os(macOS)
+        .defaultSize(width: 1280, height: 820)
+        #endif
+        #if !os(tvOS)
         .commands { AppCommands(router: router) }
         #endif
+        #if !os(macOS)
         .backgroundTask(.appRefresh(Notifier.refreshTask)) {
             await stores.backgroundRefresh()
         }
+        #endif
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active: stores.becameActive()
@@ -266,6 +297,36 @@ struct ReelApp: App {
             default: library.saveNow()
             }
         }
+
+        #if os(macOS)
+        // The player is a window of its own on the Mac: it can be resized, moved to another
+        // display and made full screen while the library stays open behind it.
+        Window("Player", id: "player") {
+            withStores(PlayerWindow())
+        }
+        .defaultSize(width: 1280, height: 720)
+        .windowResizability(.contentMinSize)
+        // A player left open at quit isn't reopened, empty, at the next launch.
+        .restorationBehavior(.disabled)
+        #endif
+    }
+
+    /// The stores every screen reads, and the app's look.
+    private func withStores<Content: View>(_ content: Content) -> some View {
+        content
+            .environment(settings)
+            .environment(library)
+            .environment(playback)
+            .environment(router)
+            .environment(memory)
+            .environment(downloads)
+            .environment(trakt)
+            .environment(alerts)
+            .environment(upcoming)
+            .environment(lists)
+            .environment(profiles)
+            .preferredColorScheme(.dark)
+            .tint(settings.accent.accent)
     }
 }
 

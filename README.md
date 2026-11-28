@@ -7,6 +7,9 @@
 - **[Reel for Apple TV](app/README.md#apple-tv)**, the same Swift code built for tvOS, with a Siri
   Remote player and a Top Shelf. Each release has `ReelTV.ipa`; install it with Sideloadly:
   `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/ReelTV.ipa`
+- **[Reel for Mac](app/README.md#mac)**, the same app for macOS 26 on Apple silicon, with the
+  player in its own window and HDR mapped to the display. Each release has `Reel-macOS.zip`:
+  `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/latest/download/Reel-macOS.zip`
 - **[`android/`](android/README.md): Reel for Android and Android TV**, the same app in Kotlin, one
   APK for phones, tablets and TVs:
   `https://github.com/mustafabshakimuddin-cloud/Reel-Media-Center/releases/download/android-latest/Reel.apk`

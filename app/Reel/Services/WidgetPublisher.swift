@@ -1,9 +1,13 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 #if os(iOS)
 import WidgetKit
 import ActivityKit
-#else
+#elseif os(tvOS)
 import TVServices
 #endif
 
@@ -58,7 +62,7 @@ enum WidgetPublisher {
         }
         #if os(iOS)
         WidgetCenter.shared.reloadAllTimelines()
-        #else
+        #elseif os(tvOS)
         // The Apple TV Top Shelf reads the same file.
         TVTopShelfContentProvider.topShelfContentDidChange()
         #endif
@@ -118,7 +122,7 @@ final class DownloadActivities {
     }
 }
 #else
-/// Apple TV has no Live Activities; a download's progress shows in Library → Downloads.
+/// Apple TV and the Mac have no Live Activities; a download's progress shows in Library → Downloads.
 @MainActor
 final class DownloadActivities {
     func progress(_ item: DownloadItem, speed: Double?) {}

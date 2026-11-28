@@ -55,7 +55,7 @@ struct SettingsView: View {
                     SecureField("API key", text: $keyDraft)
                         .textContentType(.password)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        .plainField()
                         .onSubmit(saveKey)
                     HStack {
                         Button("Save and Test", action: { saveKey(); Task { await test() } })
@@ -91,7 +91,7 @@ struct SettingsView: View {
                         SecureField("API key", text: $secondKeyDraft)
                             .textContentType(.password)
                             .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
+                            .plainField()
                             .onSubmit { settings.secondaryKey = secondKeyDraft }
                         HStack {
                             Button("Save and Test") {
@@ -186,6 +186,28 @@ struct SettingsView: View {
             } footer: {
                 Text("The audio language is chosen as the stream opens, so the right track starts straight away. Multichannel and Dolby Atmos tracks play in Spatial Audio on supported headphones. Missing subtitles come from OpenSubtitles. Night mode narrows the gap between whispers and explosions; the dialogue boost raises speech; lifting quiet films evens out releases mixed low. While any of them is on, Atmos plays without its height channels.")
             }
+
+            #if os(macOS)
+            Section {
+                Toggle("Map Dolby Vision to this display", isOn: Bindable(settings).mapDolbyVision)
+                Toggle("Tone map HDR10 to this display", isOn: Bindable(settings).toneMapHDR)
+                if settings.toneMapHDR {
+                    Picker("Display peak", selection: Bindable(settings).displayPeakNits) {
+                        ForEach(HDRDisplay.peakChoices, id: \.self) { nits in
+                            if nits == 0 {
+                                Text(HDRDisplay.estimatedPeakNits.map { "Automatic (about \(Int($0)) nit)" } ?? "Automatic").tag(nits)
+                            } else {
+                                Text("\(Int(nits)) nit").tag(nits)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("HDR on This Display")
+            } footer: {
+                Text("Dolby Vision and HDR10+ go through Apple's own mapping, which fits them to any HDR display, including HDR10 monitors without Dolby Vision. HDR10 graded brighter than the monitor is mapped down to its peak by the app, so highlights roll off instead of clipping; while that runs, Picture in Picture and AirPlay of the picture aren't available for the title. Set the peak from the monitor's specifications (HDR400 is 400 nit) if Automatic guesses wrong. Changes apply to the next title.")
+            }
+            #endif
 
             Section("Subtitle Appearance") {
                 VStack(alignment: .leading) {
@@ -394,10 +416,9 @@ struct PickRulesView: View {
             }
             Section {
                 TextField("Server", text: Bindable(settings).torrentioServer)
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
+                    .urlField()
                     .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
+                    .plainField()
                 if settings.torrentioServer != Torrentio.base {
                     Button("Use the public server") { settings.torrentioServer = Torrentio.base }
                 }
@@ -440,7 +461,7 @@ private struct GroupsList: View {
                 HStack {
                     TextField("Group, e.g. FLUX", text: $draft)
                         .autocorrectionDisabled()
-                        .textInputAutocapitalization(.characters)
+                        .capitalsField()
                         .onSubmit(add)
                     Button("Add", action: add).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
                 }

@@ -1,5 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 import ImageIO
 
 /// The accent colours offered under Settings → Appearance. Each pairs a bright accent with a deeper

@@ -1,4 +1,4 @@
-#if os(iOS)
+#if !os(tvOS)
 import AppIntents
 
 /// "Resume watching in Reel": plays the newest entry of Continue Watching, picking its source

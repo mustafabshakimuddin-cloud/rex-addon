@@ -1,7 +1,6 @@
 import Foundation
-#if canImport(UIKit)
-import UIKit
-#endif
+import CoreGraphics
+import ImageIO
 
 /// `-ReelMock`: every request the app makes is answered here, from fixed data, so CI screenshots
 /// show the same titles, sources and pictures on every run and never depend on Cinemeta, Torrentio
@@ -99,20 +98,30 @@ final class MockServer: URLProtocol {
 
     /// A soft gradient picked from the address, so each title gets its own colour.
     private static func picture(for key: String) -> Data {
-        #if canImport(UIKit)
         // Swift's hashValue changes every launch; this sum doesn't, so pictures match between runs.
         let hue = CGFloat(key.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) % 360 }) / 360
-        let size = CGSize(width: 300, height: 450)
-        let image = UIGraphicsImageRenderer(size: size).image { context in
-            let colors = [UIColor(hue: hue, saturation: 0.55, brightness: 0.55, alpha: 1).cgColor,
-                          UIColor(hue: hue, saturation: 0.7, brightness: 0.2, alpha: 1).cgColor] as CFArray
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1]) {
-                context.cgContext.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: size.width, y: size.height), options: [])
-            }
+        let width = 300, height = 450
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return Data() }
+        let colors = [rgb(hue, 0.55, 0.55), rgb(hue, 0.7, 0.2)] as CFArray
+        if let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 1]) {
+            context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: height), end: CGPoint(x: width, y: 0), options: [])
         }
-        return image.pngData() ?? Data()
-        #else
-        return Data()
-        #endif
+        guard let image = context.makeImage() else { return Data() }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else { return Data() }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : Data()
+    }
+
+    /// A colour from hue, saturation and brightness.
+    private static func rgb(_ hue: CGFloat, _ saturation: CGFloat, _ brightness: CGFloat) -> CGColor {
+        let h = hue * 6, sector = Int(h) % 6, f = h - floor(h)
+        let p = brightness * (1 - saturation), q = brightness * (1 - saturation * f), t = brightness * (1 - saturation * (1 - f))
+        let (r, g, b): (CGFloat, CGFloat, CGFloat) = [
+            (brightness, t, p), (q, brightness, p), (p, brightness, t), (p, q, brightness), (t, p, brightness), (brightness, p, q),
+        ][sector]
+        return CGColor(red: r, green: g, blue: b, alpha: 1)
     }
 }

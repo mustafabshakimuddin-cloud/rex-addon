@@ -100,7 +100,7 @@ struct SearchView: View {
         .scrollsToTopOnRetap(.search)
         .navigationTitle("Search")
         .searchable(text: $query, prompt: "Titles, cast and directors")
-        #if os(iOS)
+        #if !os(tvOS)
         .searchScopes($scope) {
             ForEach(SearchScope.allCases) { Text($0.rawValue.localized).tag($0) }
         }
