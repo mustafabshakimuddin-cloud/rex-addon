@@ -161,22 +161,14 @@ struct RootView: View {
         // A system TabView, not a hand-drawn bar: iOS 27 gives it Liquid Glass, and on the
         // unfolded iPhone Duo (and iPad) the adaptable style turns it into a side rail/sidebar.
         TabView(selection: router.tabSelection) {
-            Tab("Home", systemImage: "house.fill", value: AppTab.home) {
-                NavigationStack(path: Bindable(router).homePath) { HomeView().appDestinations() }
-            }
-            .badge(attention.badgeCount)
-            Tab("Explore", systemImage: "safari", value: AppTab.explore) {
-                NavigationStack(path: Bindable(router).explorePath) { ExploreView().appDestinations() }
-            }
-            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) {
-                NavigationStack(path: Bindable(router).calendarPath) { CalendarView().appDestinations() }
-            }
-            Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.library) {
-                NavigationStack(path: Bindable(router).libraryPath) { LibraryView().appDestinations() }
-            }
-            Tab(value: AppTab.search, role: .search) {
-                NavigationStack(path: Bindable(router).searchPath) { SearchView().appDestinations() }
-            }
+            Tab("Home", systemImage: "house.fill", value: AppTab.home) { homeTab }
+                #if os(iOS)
+                .badge(attention.badgeCount)
+                #endif
+            Tab("Explore", systemImage: "safari", value: AppTab.explore) { exploreTab }
+            Tab("Calendar", systemImage: "calendar", value: AppTab.calendar) { calendarTab }
+            Tab("Library", systemImage: "rectangle.stack.fill", value: AppTab.library) { libraryTab }
+            Tab(value: AppTab.search, role: .search) { searchTab }
         }
         .tabViewStyle(.sidebarAdaptable)
         #if os(iOS)
@@ -270,6 +262,23 @@ struct RootView: View {
         } message: {
             Text("Streams play through a debrid service such as Real-Debrid, or through a Stremio addon you add.")
         }
+    }
+
+    // Each tab's stack on its own, which keeps the TabView quick to type-check.
+    private var homeTab: some View {
+        NavigationStack(path: Bindable(router).homePath) { HomeView().appDestinations() }
+    }
+    private var exploreTab: some View {
+        NavigationStack(path: Bindable(router).explorePath) { ExploreView().appDestinations() }
+    }
+    private var calendarTab: some View {
+        NavigationStack(path: Bindable(router).calendarPath) { CalendarView().appDestinations() }
+    }
+    private var libraryTab: some View {
+        NavigationStack(path: Bindable(router).libraryPath) { LibraryView().appDestinations() }
+    }
+    private var searchTab: some View {
+        NavigationStack(path: Bindable(router).searchPath) { SearchView().appDestinations() }
     }
 
     private var errorBinding: Binding<Bool> {

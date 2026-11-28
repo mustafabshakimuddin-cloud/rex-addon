@@ -135,8 +135,14 @@ final class DownloadStore {
     }
 
     var freeBytes: Int64? {
+        #if os(tvOS)
+        // Apple TV doesn't report space for important use; plain free space is the nearest.
+        let values = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityKey])
+        return values?.volumeAvailableCapacity.map(Int64.init)
+        #else
         let values = try? folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         return values?.volumeAvailableCapacityForImportantUsage
+        #endif
     }
 
     /// Refuses a release that wouldn't fit, leaving a little room for the system.

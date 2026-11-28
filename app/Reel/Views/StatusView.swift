@@ -43,16 +43,16 @@ struct StatusView: View {
 
             if !log.isEmpty {
                 Section {
+                    #if os(tvOS)
+                    // No disclosure groups on Apple TV: the newest entries, shown as they are.
+                    ForEach(log.prefix(10)) { entry in logEntry(entry) }
+                    Button("Clear Log", role: .destructive) { AppLog.clear(); log = [] }
+                    #else
                     DisclosureGroup("\(log.count) recent errors") {
-                        ForEach(log.prefix(30)) { entry in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("\(entry.area) · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(.caption.weight(.semibold)).foregroundStyle(Theme.secondaryText)
-                                Text(entry.message).font(.caption).textSelection(.enabled)
-                            }
-                        }
+                        ForEach(log.prefix(30)) { entry in logEntry(entry) }
                         Button("Clear Log", role: .destructive) { AppLog.clear(); log = [] }
                     }
+                    #endif
                 } header: {
                     Text("Log")
                 } footer: {
@@ -77,6 +77,18 @@ struct StatusView: View {
         .refreshable { await run() }
         .task { await run() }
         .onAppear { alerts.markSeen() }
+    }
+
+    private func logEntry(_ entry: AppLog.Entry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(entry.area) · \(entry.date.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption.weight(.semibold)).foregroundStyle(Theme.secondaryText)
+            #if os(tvOS)
+            Text(entry.message).font(.caption)
+            #else
+            Text(entry.message).font(.caption).textSelection(.enabled)
+            #endif
+        }
     }
 
     private func run() async {
