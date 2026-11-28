@@ -202,6 +202,7 @@ struct RootView: View {
             }
             .environment(\.cardScale, settings.posterSize.scale)
             #if os(macOS)
+            .formStyle(.grouped)
             .frame(minWidth: 640, idealWidth: 720, minHeight: 620, idealHeight: 760)
             #endif
         }
@@ -209,7 +210,7 @@ struct RootView: View {
         // A sheet on the Mac, which has no full-screen covers; the player is a window of its own
         // (ReelMac/PlayerWindow.swift), opened whenever a session starts.
         .sheet(isPresented: Bindable(router).showingSetup) {
-            SetupView().frame(minWidth: 620, idealWidth: 680, minHeight: 640, idealHeight: 720)
+            SetupView().formStyle(.grouped).frame(minWidth: 620, idealWidth: 680, minHeight: 640, idealHeight: 720)
         }
         .sheet(item: Bindable(playback).choosingSource) { target in
             SourcesSheet(target: target).frame(minWidth: 680, idealWidth: 760, minHeight: 620, idealHeight: 760)

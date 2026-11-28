@@ -327,6 +327,10 @@ struct ReelApp: App {
             .environment(profiles)
             .preferredColorScheme(.dark)
             .tint(settings.accent.accent)
+            #if os(macOS)
+            // Grouped sections as on iPhone; the Mac's default form lines labels up in two columns.
+            .formStyle(.grouped)
+            #endif
     }
 }
 
