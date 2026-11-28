@@ -187,8 +187,9 @@ struct RootView: View {
         .environment(\.showsRatings, settings.showRatings)
         .overlay(alignment: .bottom) { preparingHUD }
         .overlay(alignment: .top) { AlertToast() }
-        // Five tabs fit an iPhone tab bar without a "More" tab; Settings is a gear and a sheet.
-        .sheet(isPresented: Bindable(router).showingSettings, onDismiss: { router.settingsDismissed() }) {
+        // Five tabs fit an iPhone tab bar without a "More" tab; Settings is a gear and a sheet
+        // (full screen on Apple TV, whose sheets are a narrow panel in the middle of the TV).
+        .settingsPresentation(isPresented: Bindable(router).showingSettings, onDismiss: { router.settingsDismissed() }) {
             NavigationStack(path: Bindable(router).settingsPath) {
                 SettingsView()
                     .toolbar {
@@ -224,7 +225,7 @@ struct RootView: View {
         .fullScreenCover(isPresented: Bindable(router).showingSetup) {
             SetupView()
         }
-        .sheet(item: Bindable(playback).choosingSource) { target in
+        .sourcesPresentation(item: Bindable(playback).choosingSource) { target in
             SourcesSheet(target: target)
                 #if os(iOS)
                 .presentationDetents([.medium, .large])
@@ -468,5 +469,27 @@ enum ScreenshotTour {
             default: break
             }
         }
+    }
+}
+
+private extension View {
+    /// Settings: a sheet, or a full-screen cover on Apple TV.
+    @ViewBuilder func settingsPresentation<Content: View>(isPresented: Binding<Bool>, onDismiss: @escaping () -> Void,
+                                                         @ViewBuilder content: @escaping () -> Content) -> some View {
+        #if os(tvOS)
+        fullScreenCover(isPresented: isPresented, onDismiss: onDismiss) { content().background(Theme.Backdrop()) }
+        #else
+        sheet(isPresented: isPresented, onDismiss: onDismiss, content: content)
+        #endif
+    }
+
+    /// The source list: a sheet, or a full-screen cover on Apple TV.
+    @ViewBuilder func sourcesPresentation<Item: Identifiable, Content: View>(item: Binding<Item?>,
+                                                                             @ViewBuilder content: @escaping (Item) -> Content) -> some View {
+        #if os(tvOS)
+        fullScreenCover(item: item) { content($0).background(Theme.Backdrop()) }
+        #else
+        sheet(item: item, content: content)
+        #endif
     }
 }
